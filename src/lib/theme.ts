@@ -1,0 +1,86 @@
+/**
+ * Theme primitives for Exavyn.
+ *
+ * Three user-selectable modes: `light`, `dark`, and `system`. `system` follows
+ * the operating system preference and keeps following it live. The resolved
+ * theme is written to `<html data-theme="light|dark">`, which drives the shared
+ * CSS custom-property tokens in `index.css`.
+ *
+ * The initial theme is applied by a tiny inline script in `index.html` (before
+ * React renders) so there is no flash of the wrong theme on load. This module
+ * is the single source of truth for the storage key and the resolution rules;
+ * keep the inline script's key in sync with `THEME_STORAGE_KEY`.
+ */
+
+export type ThemeMode = 'light' | 'dark' | 'system';
+export type ResolvedTheme = 'light' | 'dark';
+
+/** Must match the key used by the no-flash inline script in `index.html`. */
+export const THEME_STORAGE_KEY = 'exavyn.theme';
+
+export const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system'];
+
+export function isThemeMode(value: unknown): value is ThemeMode {
+  return value === 'light' || value === 'dark' || value === 'system';
+}
+
+/** Current OS preference, or `light` when `matchMedia` is unavailable. */
+export function systemTheme(): ResolvedTheme {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'light';
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+export function resolveTheme(mode: ThemeMode): ResolvedTheme {
+  return mode === 'system' ? systemTheme() : mode;
+}
+
+/** The saved preference, defaulting to `system` when nothing valid is stored. */
+export function readStoredTheme(): ThemeMode {
+  if (typeof window === 'undefined') return 'system';
+  try {
+    const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return isThemeMode(raw) ? raw : 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+export function storeTheme(mode: ThemeMode): void {
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, mode);
+  } catch {
+    /* storage may be unavailable (private mode); the in-memory state still works */
+  }
+}
+
+/** Write the resolved theme to the document root. Returns what was applied. */
+export function applyTheme(mode: ThemeMode): ResolvedTheme {
+  const resolved = resolveTheme(mode);
+  if (typeof document !== 'undefined') {
+    const root = document.documentElement;
+    root.setAttribute('data-theme', resolved);
+    root.style.colorScheme = resolved;
+  }
+  return resolved;
+}
+
+/**
+ * Subscribe to OS theme changes. Only meaningful while `system` is selected.
+ * Returns an unsubscribe function; a no-op when `matchMedia` is unavailable.
+ */
+export function onSystemThemeChange(handler: (theme: ResolvedTheme) => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {};
+  const mql = window.matchMedia('(prefers-color-scheme: dark)');
+  const listener = () => handler(mql.matches ? 'dark' : 'light');
+  if (typeof mql.addEventListener === 'function') {
+    mql.addEventListener('change', listener);
+    return () => mql.removeEventListener('change', listener);
+  }
+  // Older browsers only expose addListener/removeListener.
+  mql.addListener(listener);
+  return () => mql.removeListener(listener);
+}
