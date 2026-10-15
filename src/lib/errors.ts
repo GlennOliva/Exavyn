@@ -18,7 +18,7 @@ export class AppError extends Error {
 }
 
 const EMAIL_SEND_RATE_LIMIT_MESSAGE =
-  'We have sent too many verification emails for this project recently. ' +
+  'We have sent too many emails for this project recently. ' +
   'Please wait a few minutes, then try again. If this keeps happening, ask ' +
   'your administrator to configure a custom email (SMTP) sender.';
 

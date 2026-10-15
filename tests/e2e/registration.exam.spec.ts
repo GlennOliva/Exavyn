@@ -9,6 +9,10 @@ import { expect, test } from '@playwright/test';
  *   1. A rapid double submit must send exactly ONE request.
  *   2. A 429 email-send-limit response must surface a clear, student-friendly
  *      message (never the raw "email rate limit exceeded").
+ *
+ * Email confirmation is disabled, so a successful signup returns a live
+ * session and the page is expected to send the student straight to /student;
+ * that redirect is covered by the RegisterPage unit tests.
  */
 const SUBMIT = /create student account/i;
 
@@ -64,7 +68,7 @@ test.describe('registration page', () => {
 
     const alert = page.getByRole('alert');
     await expect(alert).toBeVisible();
-    await expect(alert).toContainText(/too many verification emails/i);
+    await expect(alert).toContainText(/too many emails/i);
     await expect(alert).not.toContainText(/email rate limit exceeded/i);
   });
 });

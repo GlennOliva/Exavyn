@@ -284,17 +284,18 @@ themes cannot exit fullscreen or register as a departure during an exam.
 | --- | --- | --- |
 | `npm run typecheck` | `tsc -b` (strict; note: `npx tsc --noEmit` does **not** check referenced projects) | green |
 | `npm run lint` | ESLint (TS + React-Hooks classic rules) | green |
-| `npm test` | 93 Vitest unit/component tests | green |
+| `npm test` | 96 Vitest unit/component tests | green |
 | `npm run build` | production build | green |
 | `npm run test:e2e` | Playwright public-surface + registration + branding/theme smoke (needs `npx playwright install`) | green: 26/26 (Chromium + Firefox); authenticated/admin specs skip unless `E2E_*` set (Chromium, headed: authenticated 3/3, admin 2/2) |
 | `npm run e2e:fixture` | Provision a self-contained authenticated-e2e fixture (teacher + student + published exam) into `.env.server.local` | used for the headed authenticated flow |
-| `npm run test:rls` | RLS/grant checks with real user tokens (incl. review-RPC authorization) | verified 28/28 live (user tokens only) |
+| `npm run test:rls` | RLS/grant checks with real user tokens (incl. review-RPC authorization, role-escalation denial, cross-student isolation) | verified 36/36 live (user tokens only) |
 | `npm run test:workflow` | Authenticated workflow + immutability + release policy + teacher features + answer review + pass threshold | verified 57/57 live (service role for fixture setup) |
 | `npm run test:concurrency` | Races, episode dedup, controller recovery, expiry | verified 5/5 live |
 | `npm run test:finality` | Final-score immutability: idempotent submit, no rewrite/delete by any user role | verified 10/10 live |
-| `npm run test:hosted` | RLS → workflow → concurrency → finality, sequentially | verified live: 28 + 57 + 5 + 10, exit 0 |
+| `npm run test:hosted` | RLS → workflow → concurrency → finality, sequentially | verified live: 36 + 57 + 5 + 10, exit 0 |
 | `npm run check:project` | Reachability + table/RPC presence (browser-safe only) | works with `.env.local` alone |
 | `npm run check:env` | Server-env presence check (values never printed) | reports READY/BLOCKED per capability |
+| `npm run users:confirm` | List/confirm pre-existing **unconfirmed** accounts (dry-run default; `--apply`) | read-only by default; never deletes or resets passwords |
 
 Unit/component coverage highlights: the departure deduplication state machine
 (single episode for blur+hidden+fullscreen; no rearm until full recovery;
@@ -341,7 +342,10 @@ deliberately do not register — so it is covered by a **manual checklist** in
 `tests/e2e/registration.exam.spec.ts` always runs (no credentials): it intercepts
 the signup endpoint to prove a rapid double submit issues **exactly one** request
 and that a `429 over_email_send_rate_limit` shows a clear cooldown message rather
-than the raw error. `tests/e2e/admin.exam.spec.ts` signs in with an admin and
+than the raw error. Email confirmation is disabled, so `src/pages/auth/RegisterPage.test.tsx`
+additionally covers the success path (a returned session redirects to `/student`),
+the no-session (already-registered) hint, and client-side password validation.
+`tests/e2e/admin.exam.spec.ts` signs in with an admin and
 asserts the `/admin` route; it is gated on `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`.
 `npm run admin:verify -- --browser` (and `admin:provision --browser`) pass those
 in via the environment and **require 2 passed / 0 skipped** before reporting
@@ -351,8 +355,11 @@ The RLS suite signs in as the seeded accounts with the publishable anon key and
 asserts cross-teacher isolation, enrollment gating, answer-key confidentiality,
 no-direct-answer-leaks in the attempt payload, attempt immutability, join-code
 column confidentiality (`code_hash`/`code_cipher` unselectable), review-RPC
-authorization (non-owner student/teacher denied), and admin breadth — using real
-user tokens, never the service role. The workflow,
+authorization (non-owner student/teacher denied), **privilege-escalation denial**
+(a student cannot insert/update `user_roles`, grant a role to another account, or
+call `admin_set_role`, and stays a `student`), **cross-student isolation**
+(a student cannot read another student's profile, role, or attempts), and admin
+breadth — using real user tokens, never the service role. The workflow,
 concurrency, and finality suites drive the RPC surface end-to-end (service role
 used only for fixture setup) and cover the immutability, race,
 deadline-precedence, release-policy, controller-recovery, and final-score
@@ -374,8 +381,8 @@ acceptance matrix, fixture/cleanup policy).
 
 Local (deterministic) — **pass**:
 
-- `tsc -b`, ESLint, `vitest` (93/93), `vite build` all pass.
-- Hosted suites (`npm run test:hosted`, exit 0): RLS 28/28, workflow 57/57,
+- `tsc -b`, ESLint, `vitest` (96/96), `vite build` all pass.
+- Hosted suites (`npm run test:hosted`, exit 0): RLS 36/36, workflow 57/57,
   concurrency 5/5, finality 10/10 (100/100), service role for fixture setup only.
 - Playwright public-surface + registration + branding/theme smoke: 26/26 across
   Chromium and Firefox (registration: no duplicate submit; clear 429 email-limit
@@ -395,7 +402,9 @@ Re-verified live against a dedicated hosted test project (project ref
 `tddmtdhhckykwnoydvjc`, never production) using **user tokens only** — **pass**:
 
 - RLS with real user tokens (acceptance 1–6, 17 partially) via
-  `npm run test:rls` — **28/28** (re-run live), incl. review-RPC authorization.
+  `npm run test:rls` — **36/36** (re-run live), incl. review-RPC authorization,
+  role-escalation denial (no `user_roles` insert/update, no `admin_set_role`),
+  and cross-student record isolation (profile/role/attempts).
 - Live authenticated lifecycle (acceptance 6, 7, 9–12, 14, 17) via a
   user-token-only script — **17/17**: owner publishes; student starts; a second
   session without the controller token is refused; payload carries no answer-key
@@ -536,7 +545,7 @@ template, and this runbook.
 Supabase instance with `supabase db reset`.
 
 **Checks actually run in this repository:**
-`npm run typecheck` ✓ · `npm run lint` ✓ · `npm test` 93/93 ✓ ·
+`npm run typecheck` ✓ · `npm run lint` ✓ · `npm test` 96/96 ✓ ·
 `npm run build` ✓ (one non-blocking chunk-size warning ~568 kB) ·
 `npm run test:e2e` ✓ 12/12 (Chromium + Firefox; public surface + registration) ·
 authenticated e2e ✓ 3/3 (Chromium, headed, isolated fixture + fresh exam) ·
@@ -547,7 +556,7 @@ admin e2e ✓ 2/2 (Chromium; sign-in → `/admin`).
 deployed and run to provision the first admin; `npm run seed` seeded the demo
 (6 users, course `SOP101`, approved + pending enrollment, one 50-item published
 exam) and is idempotent on re-run. Re-verified live: `npm run test:hosted`
-exit 0 — `rls` **28/28**, `workflow` **57/57**, `concurrency` **5/5**,
+exit 0 — `rls` **36/36**, `workflow` **57/57**, `concurrency` **5/5**,
 `finality` **10/10** (service role used only for fixture setup). Also live:
 a scripted lifecycle **17/17** (start → acquire controller → payload → save →
 Warning 1 of 2 → duplicate-episode dedup → second departure → immutable
@@ -569,7 +578,8 @@ ignores empty-valued keys (an empty `SEED_PASSWORD` had broken sign-in);
 `admin_set_role` before `create_course`; `src/pages/auth/RegisterPage.tsx` now
 uses a synchronous in-flight guard (one request per submit) and `src/lib/errors.ts`
 maps `over_email_send_rate_limit`/429 to a clear cooldown message instead of the
-raw Supabase text.
+raw Supabase text. Email confirmation was then disabled on the hosted project
+(see below), so signup no longer depends on the mailer at all.
 
 **Exam-window availability:** the schema reuses `P0002` for several distinct
 authored conditions, so `src/lib/errors.ts` now matches the authored text
@@ -579,14 +589,37 @@ the student instructions page names the opening/closing instant with an explicit
 timezone while disabling the start button outside the window; the database still
 enforces the check atomically in `start_attempt`.
 
-**Registration rate limit (diagnosed live):** `POST /auth/v1/signup` returns
-`429 {"error_code":"over_email_send_rate_limit","msg":"email rate limit exceeded"}`.
-Hosted `mailer_autoconfirm` is **false**, so every signup sends a confirmation
-email; Supabase's built-in sender allows only a couple of messages per hour. This
-is an email-send ceiling, not an app defect. Fix the message + single-submit in
-the app (done); raise the ceiling by configuring custom SMTP. Administrators can
-create pre-confirmed accounts that bypass email entirely via
-`npm run user:provision`.
+**Registration without email confirmation (fixed):** the hosted project previously
+had email confirmation enabled (`mailer_autoconfirm: false`), so every signup sent
+a confirmation email and the built-in sender's ceiling surfaced
+`429 {"error_code":"over_email_send_rate_limit"}`. Email confirmation is now
+**disabled** on `tddmtdhhckykwnoydvjc` (`auth.email.enable_confirmations = false`;
+pushed with a scoped `npx supabase config push` that changed only this property),
+so `POST /auth/v1/signup` returns a live session and the app sends the student
+straight to `/student` — no confirmation email, no resend step. Verified live: a
+fresh anon-key signup returns `access_token` (validated by reading the caller's
+own `user_roles` row = `student`) with `email_confirmed_at` set; the probe account
+was deleted afterward. The `over_email_send_rate_limit` mapping is retained as
+defense-in-depth for the remaining email flows (password recovery / invites) and
+its wording is no longer signup-specific. Public signup still yields only a
+`student` role via the `app.handle_new_user()` trigger, which never trusts
+metadata. Full lifecycle verified live with one throwaway account (deleted
+afterward): signup → live session + own `profiles`/`user_roles` readable →
+sign-out (session null) → password sign-in succeeds. Administrators can still
+pre-provision accounts with `npm run user:provision`.
+
+**Other limits still apply:** disabling confirmation does not raise the
+sign-in/sign-up request rate limit (`auth.rate_limit.sign_in_sign_ups`, default
+30 per 5 minutes per IP). This is not an "unlimited signups" change; for bulk
+onboarding use `npm run user:provision`.
+
+**Previously unconfirmed accounts:** an account created while confirmation was on
+and never confirmed has `email_confirmed_at = null`. With confirmation now
+disabled such accounts can sign in normally; to explicitly mark them confirmed
+**without deleting or resetting anything**, use `npm run users:confirm`
+(read-only dry run; `--apply` sets `email_confirm: true` via the admin API). At
+verification time the hosted project had **0** unconfirmed accounts (170 total),
+so nothing needed changing.
 
 **New provisioning tooling:** `scripts/provision-admin.mjs`
 (`npm run admin:provision`) drives the token-gated `bootstrap-admin` function with

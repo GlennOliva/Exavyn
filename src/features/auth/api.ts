@@ -1,3 +1,4 @@
+import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import { toAppError } from '../../lib/errors';
 import type { AppRole, ProfileRow } from '../../lib/database.types';
@@ -18,7 +19,7 @@ export async function signUp(
   email: string,
   password: string,
   fullName: string,
-): Promise<{ needsConfirmation: boolean }> {
+): Promise<{ session: Session | null }> {
   // Role is never supplied here; the database trigger always creates a student.
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -26,7 +27,10 @@ export async function signUp(
     options: { data: { full_name: fullName } },
   });
   if (error) throw toAppError(error);
-  return { needsConfirmation: !data.session };
+  // Email confirmation is disabled, so a successful signup returns a live
+  // session. A null session means no new account was created (for example,
+  // the address is already registered); the caller handles that case.
+  return { session: data.session };
 }
 
 export async function signOut(): Promise<void> {

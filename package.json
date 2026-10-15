@@ -23,6 +23,7 @@
     "user:provision": "node scripts/provision-user.mjs",
     "seed": "node scripts/seed-demo.mjs",
     "e2e:fixture": "node scripts/prepare-e2e-departure.mjs",
+    "users:confirm": "node scripts/confirm-unconfirmed-users.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

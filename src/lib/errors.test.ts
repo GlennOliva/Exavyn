@@ -14,13 +14,13 @@ describe('toAppError / errorMessage', () => {
       message: 'email rate limit exceeded',
     };
     const message = errorMessage(err);
-    expect(message).toMatch(/too many verification emails/i);
+    expect(message).toMatch(/too many emails/i);
     expect(message).not.toMatch(/email rate limit exceeded/i);
   });
 
   it('recognizes the snake_case error_code field', () => {
     const err = { error_code: 'over_email_send_rate_limit', message: 'raw' };
-    expect(errorMessage(err)).toMatch(/too many verification emails/i);
+    expect(errorMessage(err)).toMatch(/too many emails/i);
   });
 
   it('maps a bare HTTP 429 to a generic rate-limit message', () => {

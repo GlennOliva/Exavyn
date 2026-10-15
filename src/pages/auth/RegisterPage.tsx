@@ -12,7 +12,6 @@ export function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const inFlight = useRef(false);
@@ -34,11 +33,14 @@ export function RegisterPage() {
     inFlight.current = true;
     setSubmitting(true);
     try {
-      const result = await signUp(email, password, fullName);
-      setDone(true);
-      if (!result.needsConfirmation) {
-        window.location.assign('/');
+      const { session } = await signUp(email, password, fullName);
+      if (!session) {
+        setError('An account with this email already exists. Try signing in instead.');
+        return;
       }
+      // A live session is returned immediately (email confirmation is off).
+      // Reload at the student dashboard so the app bootstraps from the session.
+      window.location.assign('/student');
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -55,58 +57,50 @@ export function RegisterPage() {
           Public registration always creates a <strong>student</strong> account. Teacher and
           administrator accounts are provisioned by an administrator.
         </p>
-        {done ? (
-          <Alert tone="success">
-            Registration received. If email confirmation is enabled, check your inbox and confirm
-            before signing in.
-          </Alert>
-        ) : null}
         {error ? <Alert tone="danger" role="alert">{error}</Alert> : null}
-        {!done ? (
-          <form onSubmit={onSubmit} className="mt-2">
-            <Field label="Full name" htmlFor="fullName">
-              <TextInput
-                id="fullName"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-              />
-            </Field>
-            <Field label="Email" htmlFor="regEmail">
-              <TextInput
-                id="regEmail"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </Field>
-            <Field label="Password" htmlFor="regPassword" hint="At least 8 characters.">
-              <TextInput
-                id="regPassword"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
-            <Field label="Confirm password" htmlFor="regConfirm">
-              <TextInput
-                id="regConfirm"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-              />
-            </Field>
-            <Button type="submit" variant="primary" block disabled={submitting}>
-              {submitting ? 'Creating account…' : 'Create student account'}
-            </Button>
-          </form>
-        ) : null}
+        <form onSubmit={onSubmit} className="mt-2">
+          <Field label="Full name" htmlFor="fullName">
+            <TextInput
+              id="fullName"
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
+          </Field>
+          <Field label="Email" htmlFor="regEmail">
+            <TextInput
+              id="regEmail"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </Field>
+          <Field label="Password" htmlFor="regPassword" hint="At least 8 characters.">
+            <TextInput
+              id="regPassword"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+          <Field label="Confirm password" htmlFor="regConfirm">
+            <TextInput
+              id="regConfirm"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+          </Field>
+          <Button type="submit" variant="primary" block disabled={submitting}>
+            {submitting ? 'Creating account…' : 'Create student account'}
+          </Button>
+        </form>
         <p className="mt-2 small">
           Already registered? <Link to="/login">Sign in</Link>
         </p>

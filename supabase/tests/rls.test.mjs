@@ -33,8 +33,9 @@ function client(email) {
 }
 
 async function signIn(c, email) {
-  const { error } = await c.auth.signInWithPassword({ email, password });
+  const { data, error } = await c.auth.signInWithPassword({ email, password });
   if (error) throw new Error(`sign in ${email}: ${error.message}`);
+  return data.user?.id;
 }
 
 let failures = 0;
@@ -69,8 +70,8 @@ async function main() {
   await signIn(teacher1, 'teacher1@exam.test');
   await signIn(teacher2, 'teacher2@exam.test');
   await signIn(admin, 'admin@exam.test');
-  await signIn(student1, 'student1@exam.test');
-  await signIn(student2, 'student2@exam.test');
+  const student1UserId = await signIn(student1, 'student1@exam.test');
+  const student2UserId = await signIn(student2, 'student2@exam.test');
 
   // Locate the demo course + exam.
   const courseRows = await expectRows(
@@ -257,6 +258,51 @@ async function main() {
   await check('student1 cannot write to answer_keys', async () => {
     const { error } = await student1.from('answer_keys').insert({ question_id: '00000000-0000-0000-0000-000000000000', correct_option_id: '00000000-0000-0000-0000-000000000000' });
     if (!error) throw new Error('direct insert was allowed');
+  });
+
+  // --- Public signup can never grant a privileged role (trusted backend) ---
+  // Roles live in user_roles, which has no authenticated INSERT/UPDATE policy;
+  // the only grant path is admin_set_role (admin-gated) plus the signup trigger.
+  await check('student1 cannot insert a privileged role row', async () => {
+    const { error } = await student1
+      .from('user_roles')
+      .insert({ user_id: student1UserId, role: 'admin' });
+    if (!error) throw new Error('direct user_roles insert was allowed');
+  });
+  await check('student1 cannot update their own role to admin', async () => {
+    const { data, error } = await student1
+      .from('user_roles')
+      .update({ role: 'admin' })
+      .eq('user_id', student1UserId)
+      .select('role');
+    if (!error && (data ?? []).length > 0) throw new Error('self role update was allowed');
+  });
+  await check('student1 cannot grant a role to another account', async () => {
+    const { error } = await student1
+      .from('user_roles')
+      .insert({ user_id: student2UserId, role: 'teacher' });
+    if (!error) throw new Error('cross-user role insert was allowed');
+  });
+  await check('student1 cannot call admin_set_role', async () => {
+    const { error } = await student1.rpc('admin_set_role', {
+      p_user_id: student1UserId,
+      p_role: 'admin',
+    });
+    if (!error) throw new Error('admin_set_role was allowed for a student');
+  });
+  await check('student1 role is still student after escalation attempts', async () => {
+    await expectRows(student1, null, () => student1.from('user_roles').select('role').eq('user_id', student1UserId).eq('role', 'student'), 1);
+  });
+
+  // --- Cross-student record isolation -------------------------------------
+  await check('student1 cannot read student2 profile', async () => {
+    await expectRows(student1, null, () => student1.from('profiles').select('id').eq('id', student2UserId), 0);
+  });
+  await check('student1 cannot read student2 role', async () => {
+    await expectRows(student1, null, () => student1.from('user_roles').select('role').eq('user_id', student2UserId), 0);
+  });
+  await check('student1 cannot read student2 attempts', async () => {
+    await expectRows(student1, null, () => student1.from('exam_attempts').select('id').eq('student_id', student2UserId), 0);
   });
 
   // --- Admin: full visibility ---------------------------------------------

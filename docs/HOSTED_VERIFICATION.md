@@ -8,15 +8,19 @@ workflow, and the concurrency/finality guarantees.
 
 > Status: **executed** against the dedicated hosted test project
 > `tddmtdhhckykwnoydvjc` (never production). Re-verified live on 2026-10-15:
-> RLS **28/28**, workflow **57/57**, concurrency **5/5**, finality **10/10**
+> RLS **36/36**, workflow **57/57**, concurrency **5/5**, finality **10/10**
 > (service role used for fixture setup only), public/local e2e **26 passed /
-> 10 skipped**, unit **93/93**, authenticated e2e (isolated fixture, Chromium
+> 10 skipped**, unit **96/96**, authenticated e2e (isolated fixture, Chromium
 > headed) **3/3** plus themed-authenticated **2/2**. Migrations `0009` (teacher
 > features) and `0010` (answer review + pass threshold) were applied to the
 > hosted project via `npx supabase db push` and `npx supabase migration list`
-> was re-verified once DB egress was available. See §10 for counts and the bugs
-> found and fixed. OS-level app switches (Command+Tab / Alt+Tab) are covered by a
-> **manual checklist** (§5) and are **UNVERIFIED** until run on that OS.
+> was re-verified once DB egress was available. Email confirmation was then
+> **disabled** on the hosted project (scoped `config push`), so public sign-up
+> returns a live session and is not gated by the email sender; a fresh anon-key
+> signup was verified live and the probe account deleted. See §10 for counts and
+> the bugs found and fixed. OS-level app switches (Command+Tab / Alt+Tab) are
+> covered by a **manual checklist** (§5) and are **UNVERIFIED** until run on that
+> OS.
 
 ---
 
@@ -216,16 +220,62 @@ to Playwright **only via environment variables** (never argv, never disk), sets
 run is a failure, not a pass. A JSON report is written to a temp file and deleted
 immediately after parsing.
 
-### Registration is bounded by the email send rate limit
+### Registration does not depend on email confirmation
 
-Public sign-up and password reset send a confirmation/recovery email, so they
-are limited by the project's **email send rate limit** (Supabase's built-in
-sender allows only a couple of messages per hour). Exceeding it returns
-`429 over_email_send_rate_limit`. The app maps this to a clear cooldown message
-(`src/lib/errors.ts`) and the register form sends exactly one request per submit
-(`src/pages/auth/RegisterPage.tsx`). To raise the limit, configure a custom SMTP
-sender (Dashboard → Authentication → Emails/SMTP). Administrators can bypass it
-entirely with `npm run user:provision` (pre-confirmed accounts).
+Email confirmation is **disabled** on the hosted test project, so public sign-up
+creates a confirmed account and returns a live session immediately — no
+confirmation email is sent, and the app sends the new student straight to
+`/student` (`src/pages/auth/api.ts`, `src/pages/auth/RegisterPage.tsx`).
+
+Confirm/disable it for a project with a **scoped** config push (only the declared
+property is written; other remote settings are left untouched):
+
+```bash
+# supabase/config.toml, temporarily containing just:
+#   project_id = "exam_detector"
+#   [auth.email]
+#   enable_confirmations = false
+npx supabase config diff --project-ref <test-project-ref>   # review first
+npx supabase config push --project-ref <test-project-ref> --yes
+```
+
+Or via the dashboard: Authentication → Sign In / Providers → Email → turn off
+**Confirm email** (`mailer_autoconfirm = true`). Verify live: an anon-key
+`POST /auth/v1/signup` returns an `access_token` and the caller's own
+`user_roles` row reads `student`.
+
+The **email send rate limit** still bounds the remaining email flows (password
+recovery, email change, invites); exceeding it returns `429
+over_email_send_rate_limit`, which the app maps to a clear cooldown message
+(`src/lib/errors.ts`). To raise the limit, configure a custom SMTP sender
+(Dashboard → Authentication → Emails/SMTP). Administrators can still
+pre-provision accounts with `npm run user:provision`.
+
+Disabling email confirmation does **not** raise any other limit: the
+sign-in/sign-up request rate limit (`auth.rate_limit.sign_in_sign_ups`, default
+**30 per 5 minutes per IP**) still applies to registration. Batch/one-time
+onboarding of many students should use `npm run user:provision` (service role)
+rather than 40 rapid public signups.
+
+### Enabling pre-existing unconfirmed accounts
+
+With confirmation disabled, accounts that never confirmed can sign in normally.
+To explicitly mark them confirmed — **without deleting accounts or resetting
+passwords** — use the read-only-by-default helper:
+
+```bash
+npm run users:confirm             # dry run: lists unconfirmed accounts (masked)
+npm run users:confirm -- --apply  # sets email_confirm=true (admin API) only
+```
+
+It never touches passwords or roles (roles are owned by the signup trigger /
+`admin_set_role`). At verification time there were **0** unconfirmed accounts
+(170 total), so no change was required. Dashboard equivalent: Authentication →
+Users → open a user → "Confirm email".
+
+> Accounts created while confirmation was enabled but never confirmed (0 in the
+> hosted project at the time of this run) are left untouched — they are not
+> deleted or bulk-confirmed. With confirmation off they can sign in normally.
 
 ---
 
@@ -244,7 +294,7 @@ The seeder and the RLS suite share the fixture contract in `scripts/seed-demo.mj
 
 | Command | What it proves | Needs service key |
 | --- | --- | --- |
-| `npm run test:rls` | Row-level security + grant boundaries + review-RPC authorization with real user tokens | no |
+| `npm run test:rls` | Row-level security + grant boundaries + review-RPC authorization + role-escalation denial + cross-student isolation, with real user tokens | no |
 | `npm run test:workflow` | Full authenticated workflow + immutability + release policy + answer review + pass threshold | yes |
 | `npm run test:concurrency` | Races, duplicate-episode dedup, controller recovery, expiry | yes |
 | `npm run test:finality` | Final-score immutability: idempotent submit, no user-facing rewrite/delete | yes |
@@ -507,18 +557,22 @@ server environment present (`.env.server.local`).
 
 ```
 Environment: hosted test project tddmtdhhckykwnoydvjc   Node 24.14.0
-Local checks (offline):  typecheck PASS, lint PASS, unit 93/93, build PASS,
+Local checks (offline):  typecheck PASS, lint PASS, unit 96/96, build PASS,
                          e2e 26/26 passed / 10 skipped
                          (Chromium + Firefox; public + registration + branding/
                          theme run always, authenticated/admin specs skip unless
                          E2E_* creds)
 
 Hosted checks (this session): `npm run test:hosted` exit 0
-  rls                    28/28   PASS   (real user tokens; anon key only;
+  rls                    36/36   PASS   (real user tokens; anon key only;
                                          join-code column confidentiality,
-                                         non-owner RPC denial, and
+                                         non-owner RPC denial,
                                          get_attempt_review authorization
-                                         (peer student / non-owner teacher))
+                                         (peer student / non-owner teacher),
+                                         role-escalation denial (no user_roles
+                                         insert/update, no admin_set_role),
+                                         and cross-student record isolation
+                                         (profile / role / attempts))
   workflow               57/57   PASS   (service role for fixture setup only;
                                          provisioning, isolation, enrollment,
                                          publish, controller, grading, dedup,
@@ -567,11 +621,28 @@ Registration smoke e2e (Chromium + Firefox): 4/4 PASS
                                  double submit -> exactly one /auth/v1/signup
                                  request; 429 over_email_send_rate_limit ->
                                  clear cooldown message (never the raw text).
+Registration unit (RegisterPage.test.tsx): 3/3 PASS
+                                 session -> redirect to /student; null session
+                                 -> "already exists" hint, no redirect;
+                                 mismatched passwords block submit.
 
-Registration diagnosis (live):   POST /auth/v1/signup ->
-  429 {"error_code":"over_email_send_rate_limit"} — hosted mailer_autoconfirm
-  is false, so each signup emails a confirmation bounded by the built-in sender
-  rate limit. UI hardening + custom-SMTP advice documented in §3.
+Live signup without email confirmation (hosted, anon key): PASS
+  - `auth.email.enable_confirmations` remote = false (scoped `config push`; the
+    one `[update]` in `config diff`, 11 other remote props left unchanged).
+  - `signUp()` via supabase-js returned a live `session` (and `getSession()`
+    agreed); `user.email_confirmed_at` set; no confirmation email sent.
+  - the new user's own `user_roles` row read `{role:"student"}` via its token,
+    and its `profiles` row was created by the `handle_new_user()` trigger.
+  - probe account deleted via the service-role admin API (200).
+  - unconfirmed accounts in the project at run time: **0** (170 total users).
+
+Live signup lifecycle (one throwaway account, deleted after): PASS
+  - fresh `signUp` -> no error, live session, `email_confirmed_at` set.
+  - immediate authenticated access: own `profiles` row = 1, own `user_roles`
+    row = `student` (read with the new session).
+  - `signOut()` -> `getSession()` = null.
+  - subsequent `signInWithPassword` -> session returned, own profile readable.
+  - `npm run users:confirm` -> scanned 170 accounts, 0 unconfirmed.
 
 Preceding this session (user tokens only):
   live lifecycle         17/17   PASS
@@ -621,7 +692,36 @@ Immutable leftovers:     expected (published versions / finalized attempts /
   skips the server. Previously any `E2E_BASE_URL` disabled the server, which
   broke `npm run test:e2e` once `.env.server.local` set it.
 
-### Answer-review feature pass (migration `0010`)
+### Signup without email confirmation
+
+- Hosted setting: `auth.email.enable_confirmations` pushed to `false` with a
+  **scoped** `npx supabase config push` (config.toml temporarily declared only
+  that property; `config diff` reported a single `[update]` and left the other 11
+  remote properties unchanged, called out by the CLI itself).
+- `src/features/auth/api.ts`: `signUp` now returns the returned `session`
+  (`{ session }`) instead of `{ needsConfirmation }`.
+- `src/pages/auth/RegisterPage.tsx`: removed the confirmation/resend copy and the
+  `done` success state; a returned session redirects to `/student`, and a null
+  session shows the "already exists" sign-in hint. Client password checks and the
+  synchronous single-submit guard are unchanged.
+- `supabase/tests/rls.test.mjs`: added role-escalation denial (`user_roles`
+  insert/update, `admin_set_role`, role still `student`) and cross-student record
+  isolation (profile / role / attempts) checks — now **36/36**.
+- `scripts/confirm-unconfirmed-users.mjs` (`npm run users:confirm`): read-only by
+  default; `--apply` sets `email_confirm=true` via the admin API for pre-existing
+  unconfirmed accounts (never deletes users, never resets passwords, never grants
+  roles).
+- `src/features/auth/AuthContext.tsx`: `signUp` context signature updated to
+  `Promise<{ session: Session | null }>`.
+- `src/lib/errors.ts`: the `over_email_send_rate_limit` message no longer claims
+  "verification emails" (signup no longer sends one); retained for the remaining
+  email flows.
+- `src/pages/auth/RegisterPage.test.tsx` (new, 3 tests) and
+  `tests/e2e/registration.exam.spec.ts` (assertion wording) updated. Public
+  sign-up still yields only a `student` role — the `app.handle_new_user()` trigger
+  never trusts metadata (unchanged; migration `0004`).
+
+### Fixes made while re-running (this session)
 
 - `supabase/migrations/2026010100010_attempt_review.sql` authored and applied via
   `npx supabase db push`; pre-existing rows backfilled to `answer_review='never'`
@@ -635,7 +735,9 @@ Immutable leftovers:     expected (published versions / finalized attempts /
   checks (57/57). The attempt-limit assertion was relaxed to match the wording
   now emitted by `start_attempt` (`You have used all N attempts for this exam`).
 - `supabase/tests/rls.test.mjs`: added `get_attempt_review` authorization checks
-  for a non-owner student and a non-owner teacher (28/28).
+  for a non-owner student and a non-owner teacher, plus the signup-hardening
+  checks (role-escalation denial + cross-student isolation); the suite is now
+  **36/36**.
 
 ### Bug found and fixed
 

@@ -34,7 +34,7 @@ interface AuthContextValue {
     email: string,
     password: string,
     fullName: string,
-  ) => Promise<{ needsConfirmation: boolean }>;
+  ) => Promise<{ session: Session | null }>;
   signOut: () => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
