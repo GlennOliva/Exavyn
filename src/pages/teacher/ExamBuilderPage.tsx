@@ -36,6 +36,9 @@ const EMPTY: ExamDraftInput = {
   question_randomization: false,
   option_randomization: false,
   result_release: 'immediate',
+  result_release_at: null,
+  answer_release_at: null,
+  timezone: 'UTC',
   max_attempts: 1,
   result_policy: 'latest',
   answer_review: 'immediate',
@@ -47,6 +50,7 @@ const ANSWER_REVIEW_LABELS: Record<ExamDraftInput['answer_review'], string> = {
   immediate: 'Immediately (as soon as the score is released)',
   after_attempts: 'After all attempts are used (or the exam closes)',
   after_close: 'After the exam closes',
+  scheduled: 'Scheduled (after result release time)',
   never: 'Never (hide correct answers)',
 };
 
@@ -76,10 +80,13 @@ export function ExamBuilderPage() {
         closes_at: isoToLocalInput(loaded.data!.exam.closes_at),
         question_randomization: loaded.data!.exam.question_randomization,
         option_randomization: loaded.data!.exam.option_randomization,
-        result_release: loaded.data!.exam.result_release,
+        result_release: loaded.data!.exam.result_release as ExamDraftInput['result_release'],
+        result_release_at: loaded.data!.exam.result_release_at ? isoToLocalInput(loaded.data!.exam.result_release_at) : null,
+        answer_release_at: loaded.data!.exam.answer_release_at ? isoToLocalInput(loaded.data!.exam.answer_release_at) : null,
+        timezone: loaded.data!.exam.timezone ?? 'UTC',
         max_attempts: loaded.data!.exam.max_attempts,
         result_policy: loaded.data!.exam.result_policy,
-        answer_review: loaded.data!.exam.answer_review,
+        answer_review: loaded.data!.exam.answer_review as ExamDraftInput['answer_review'],
         pass_threshold: loaded.data!.exam.pass_threshold,
         questions: loaded.data!.questions,
       };
@@ -144,6 +151,20 @@ function ExamSettingsForm({
         setError('Pass threshold must be between 0 and 100, or left blank.');
         return;
       }
+      const result_release_at = draft.result_release === 'scheduled' && draft.result_release_at ? localInputToIso(draft.result_release_at) : null;
+      const answer_release_at = draft.answer_review === 'scheduled' && draft.answer_release_at ? localInputToIso(draft.answer_release_at) : null;
+      if (draft.result_release === 'scheduled' && !result_release_at) {
+        setError('Set a result release time for scheduled release.');
+        return;
+      }
+      if (draft.answer_review === 'scheduled' && !answer_release_at) {
+        setError('Set an answer release time for scheduled answer review.');
+        return;
+      }
+      if (result_release_at && answer_release_at && answer_release_at < result_release_at) {
+        setError('Answer release cannot be before result release.');
+        return;
+      }
       await updateExamSettings(examId, {
         title: draft.title,
         instructions: draft.instructions,
@@ -151,6 +172,9 @@ function ExamSettingsForm({
         closes_at: closes,
         duration_minutes: draft.duration_minutes,
         result_release: draft.result_release,
+        result_release_at,
+        answer_release_at,
+        timezone: draft.timezone ?? 'UTC',
         max_attempts: draft.max_attempts,
         result_policy: draft.result_policy,
         answer_review: draft.answer_review,
@@ -250,9 +274,22 @@ function ExamSettingsForm({
               >
                 <option value="immediate">Immediately</option>
                 <option value="after_close">After exam closes</option>
+                <option value="scheduled">Scheduled</option>
               </Select>
             </Field>
           </div>
+          {draft.result_release === 'scheduled' ? (
+            <div className="grow">
+              <Field label="Result release at" htmlFor="sResultReleaseAt">
+                <TextInput
+                  id="sResultReleaseAt"
+                  type="datetime-local"
+                  value={draft.result_release_at ?? ''}
+                  onChange={(e) => update({ result_release_at: e.target.value })}
+                />
+              </Field>
+            </div>
+          ) : null}
           <div style={{ maxWidth: 200 }}>
             <Field label="Maximum attempts" htmlFor="sMaxAttempts">
               <TextInput
@@ -280,6 +317,30 @@ function ExamSettingsForm({
               </Select>
             </Field>
           </div>
+        </div>
+        <div className="row">
+          <div className="grow">
+            <Field label="Timezone" htmlFor="sTimezone">
+              <TextInput
+                id="sTimezone"
+                value={draft.timezone ?? 'UTC'}
+                onChange={(e) => update({ timezone: e.target.value })}
+                placeholder="UTC"
+              />
+            </Field>
+          </div>
+          {draft.answer_review === 'scheduled' ? (
+            <div className="grow">
+              <Field label="Answer release at" htmlFor="sAnswerReleaseAt">
+                <TextInput
+                  id="sAnswerReleaseAt"
+                  type="datetime-local"
+                  value={draft.answer_release_at ?? ''}
+                  onChange={(e) => update({ answer_release_at: e.target.value })}
+                />
+              </Field>
+            </div>
+          ) : null}
         </div>
         <div className="row">
           <div className="grow">
@@ -389,10 +450,26 @@ function ExamBuilderForm({
       setError('Enter valid opening and closing times.');
       throw new Error('invalid');
     }
+    if (draft.result_release === 'scheduled') {
+      const r = localInputToIso(draft.result_release_at ?? '');
+      if (!r) { setError('Set a result release time for scheduled release.'); throw new Error('invalid'); }
+    }
+    if (draft.answer_review === 'scheduled') {
+      const a = localInputToIso(draft.answer_release_at ?? '');
+      if (!a) { setError('Set an answer release time for scheduled answer review.'); throw new Error('invalid'); }
+    }
+    if (draft.result_release === 'scheduled' && draft.answer_review === 'scheduled') {
+      const r = localInputToIso(draft.result_release_at ?? '');
+      const a = localInputToIso(draft.answer_release_at ?? '');
+      if (r && a && a < r) { setError('Answer release cannot be before result release.'); throw new Error('invalid'); }
+    }
     const payload: ExamDraftInput = {
       ...draft,
       opens_at: opens,
       closes_at: closes,
+      result_release_at: draft.result_release === 'scheduled' && draft.result_release_at ? localInputToIso(draft.result_release_at) : null,
+      answer_release_at: draft.answer_review === 'scheduled' && draft.answer_release_at ? localInputToIso(draft.answer_release_at) : null,
+      timezone: draft.timezone ?? 'UTC',
     };
     const id = await saveExamDraft(currentId, payload);
     setCurrentId(id);
@@ -520,11 +597,24 @@ function ExamBuilderForm({
               >
                 <option value="immediate">Immediately</option>
                 <option value="after_close">After exam closes</option>
+                <option value="scheduled">Scheduled</option>
               </Select>
             </Field>
           </div>
         </div>
         <div className="row">
+          {draft.result_release === 'scheduled' ? (
+            <div className="grow">
+              <Field label="Result release at" htmlFor="eResultReleaseAt">
+                <TextInput
+                  id="eResultReleaseAt"
+                  type="datetime-local"
+                  value={draft.result_release_at ?? ''}
+                  onChange={(e) => update({ result_release_at: e.target.value })}
+                />
+              </Field>
+            </div>
+          ) : null}
           <div style={{ maxWidth: 200 }}>
             <Field label="Maximum attempts" htmlFor="eMaxAttempts">
               <TextInput
@@ -552,6 +642,29 @@ function ExamBuilderForm({
               </Select>
             </Field>
           </div>
+        </div>
+        <div className="row">
+          <div className="grow">
+            <Field label="Timezone" htmlFor="eTimezone">
+              <TextInput
+                id="eTimezone"
+                value={draft.timezone ?? 'UTC'}
+                onChange={(e) => update({ timezone: e.target.value })}
+              />
+            </Field>
+          </div>
+          {draft.answer_review === 'scheduled' ? (
+            <div className="grow">
+              <Field label="Answer release at" htmlFor="eAnswerReleaseAt">
+                <TextInput
+                  id="eAnswerReleaseAt"
+                  type="datetime-local"
+                  value={draft.answer_release_at ?? ''}
+                  onChange={(e) => update({ answer_release_at: e.target.value })}
+                />
+              </Field>
+            </div>
+          ) : null}
         </div>
         <div className="row">
           <label className="row small">

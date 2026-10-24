@@ -89,6 +89,8 @@ export function answerReviewPolicyLabel(policy: string | null | undefined): stri
       return 'After all attempts are used (or the exam closes)';
     case 'after_close':
       return 'After the exam closes';
+    case 'scheduled':
+      return 'At a scheduled time';
     case 'never':
       return 'Correct answers are not released';
     default:
@@ -106,6 +108,10 @@ export function reviewUnavailableReasonText(reason: string | null | undefined): 
       return 'Correct answers become visible once your score is released.';
     case 'awaiting_close':
       return 'Correct answers will be visible after the exam closes.';
+    case 'awaiting_scheduled':
+      return 'Correct answers will be visible at the scheduled time.';
+    case 'scheduled':
+      return 'Correct answers will be visible at the scheduled time.';
     case 'awaiting_attempts':
       return 'Correct answers become visible once you have used all of your attempts for this exam.';
     default:

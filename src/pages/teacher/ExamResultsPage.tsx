@@ -1,32 +1,52 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAsync } from '../../lib/useAsync';
-import { listExamAttempts } from '../../features/results/api';
+import { listExamAttemptsPage, type AttemptWithStudent } from '../../features/results/api';
 import { Alert, Button, PageSpinner, StatusBadge, TextInput } from '../../components/ui';
+import { ScoreBadge } from '../../components/ScoreBadge';
+import { classifyScore } from '../../features/results/score';
 import { downloadCsv, toCsv } from '../../lib/csv';
 import { formatDateTime, percent, submissionReasonLabel } from '../../lib/format';
+import { useClampPage, usePageState } from '../../lib/pagination';
+import { Pagination } from '../../components/Pagination';
 
 export function ExamResultsPage() {
   const { examId = '' } = useParams();
-  const { data, loading, error, reload } = useAsync(() => listExamAttempts(examId), [examId]);
-  const [query, setQuery] = useState('');
-
+  const table = usePageState();
+  const { data, loading, error, reload } = useAsync(
+    () =>
+      listExamAttemptsPage(examId, {
+        page: table.page,
+        pageSize: table.pageSize,
+        q: table.q,
+      }),
+    [examId, table.page, table.pageSize, table.q],
+  );
+  useClampPage(table.page, table.pageSize, data?.total ?? 0, table.setPage);
+  const [exporting, setExporting] = useState(false);
   if (loading) return <PageSpinner />;
   if (error) return <Alert tone="danger" role="alert">{error}</Alert>;
 
-  const needle = query.trim().toLowerCase();
-  const attempts = (data ?? []).filter((a) => {
-    if (!needle) return true;
-    return (
-      (a.student?.full_name ?? '').toLowerCase().includes(needle) ||
-      (a.student?.email ?? '').toLowerCase().includes(needle)
-    );
-  });
+  const attempts = data?.rows ?? [];
 
-  const exportCsv = () => {
-    const csv = toCsv(
-      ['Student', 'Email', 'State', 'Violations', 'Reason', 'Earned', 'Max', 'Percentage', 'Submitted'],
-      attempts.map((a) => [
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const all: AttemptWithStudent[] = [];
+      let exportPage = 1;
+      for (;;) {
+        const chunk = await listExamAttemptsPage(examId, {
+          page: exportPage,
+          pageSize: 50,
+          q: table.q,
+        });
+        all.push(...chunk.rows);
+        if (chunk.rows.length === 0 || all.length >= chunk.total) break;
+        exportPage += 1;
+      }
+      const csv = toCsv(
+      ['Student', 'Email', 'State', 'Violations', 'Reason', 'Earned', 'Max', 'Percentage', 'Result', 'Submitted'],
+      all.map((a) => [
         a.student?.full_name ?? '',
         a.student?.email ?? '',
         a.state,
@@ -35,10 +55,20 @@ export function ExamResultsPage() {
         a.earned_points ?? '',
         a.max_points ?? '',
         a.percentage ?? '',
+        classifyScore({
+          percentage: a.percentage,
+          earnedPoints: a.earned_points,
+          maxPoints: a.max_points,
+          passThreshold: a.pass_threshold,
+          state: a.state,
+        }).label,
         a.submitted_at ?? '',
       ]),
-    );
-    downloadCsv(`exam-${examId}-results.csv`, csv);
+      );
+      downloadCsv(`exam-${examId}-results.csv`, csv);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -50,12 +80,12 @@ export function ExamResultsPage() {
             type="search"
             aria-label="Search results"
             placeholder="Search by student…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={table.q}
+            onChange={(e) => table.setQuery(e.target.value)}
           />
           <Button onClick={() => void reload()}>Refresh</Button>
-          <Button onClick={exportCsv} disabled={attempts.length === 0}>
-            Export CSV
+          <Button onClick={() => void exportCsv()} disabled={exporting || (data?.total ?? 0) === 0}>
+            {exporting ? 'Exporting…' : 'Export CSV'}
           </Button>
         </div>
       </div>
@@ -89,9 +119,18 @@ export function ExamResultsPage() {
                 <td>{attempt.violation_count}</td>
                 <td>{submissionReasonLabel(attempt.submission_reason)}</td>
                 <td>
-                  {attempt.state === 'submitted'
-                    ? `${attempt.earned_points ?? 0}/${attempt.max_points ?? 0} (${percent(attempt.percentage)})`
-                    : 'In progress'}
+                  {attempt.state === 'submitted' ? (
+                    <>
+                      {`${attempt.earned_points ?? 0}/${attempt.max_points ?? 0} (${percent(attempt.percentage)})`}{' '}
+                    </>
+                  ) : null}
+                  <ScoreBadge
+                    percentage={attempt.percentage}
+                    earnedPoints={attempt.earned_points}
+                    maxPoints={attempt.max_points}
+                    passThreshold={attempt.pass_threshold}
+                    state={attempt.state}
+                  />
                 </td>
                 <td className="small muted">{formatDateTime(attempt.submitted_at)}</td>
                 <td>
@@ -111,6 +150,14 @@ export function ExamResultsPage() {
           </tbody>
         </table>
       </div>
+      <Pagination
+        label="exam results"
+        page={table.page}
+        pageSize={table.pageSize}
+        total={data?.total ?? 0}
+        onPageChange={table.setPage}
+        onPageSizeChange={table.setPageSize}
+      />
     </div>
   );
 }

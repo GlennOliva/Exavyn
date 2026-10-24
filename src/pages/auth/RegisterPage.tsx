@@ -11,6 +11,7 @@ export function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -78,19 +79,25 @@ export function RegisterPage() {
             />
           </Field>
           <Field label="Password" htmlFor="regPassword" hint="At least 8 characters.">
-            <TextInput
-              id="regPassword"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <div className="row" style={{ gap: 8 }}>
+              <TextInput
+                id="regPassword"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <Button type="button" variant="ghost" onClick={() => setShowPassword((v) => !v)}>
+                {showPassword ? 'Hide' : 'Show'}
+              </Button>
+            </div>
           </Field>
           <Field label="Confirm password" htmlFor="regConfirm">
             <TextInput
               id="regConfirm"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               autoComplete="new-password"
               required
               value={confirm}

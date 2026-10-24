@@ -10,6 +10,7 @@ import { RegisterPage } from './pages/auth/RegisterPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { UpdatePasswordPage } from './pages/auth/UpdatePasswordPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { FeedbackPage } from './pages/FeedbackPage';
 
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
@@ -76,6 +77,7 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <RoleHomeRedirect /> },
           { path: '/profile', element: <ProfilePage /> },
+          { path: '/feedback', element: <FeedbackPage /> },
 
           {
             element: <RequireRole roles={['admin']} />,

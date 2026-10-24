@@ -1,11 +1,24 @@
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../lib/useAsync';
-import { listTeacherCourses } from '../../features/courses/api';
+import { listTeacherCoursesPage } from '../../features/courses/api';
 import { Alert, Card, EmptyState, PageSpinner, StatusBadge } from '../../components/ui';
 import { formatDate } from '../../lib/format';
+import { useClampPage, usePageState } from '../../lib/pagination';
+import { Pagination } from '../../components/Pagination';
 
 export function TeacherDashboard() {
-  const { data, loading, error } = useAsync(() => listTeacherCourses(), []);
+  const table = usePageState();
+  const { data, loading, error } = useAsync(
+    () =>
+      listTeacherCoursesPage({
+        page: table.page,
+        pageSize: table.pageSize,
+        q: table.q,
+        archived: 'active',
+      }),
+    [table.page, table.pageSize, table.q],
+  );
+  useClampPage(table.page, table.pageSize, data?.total ?? 0, table.setPage);
   if (loading) return <PageSpinner />;
   if (error) return <Alert tone="danger" role="alert">{error}</Alert>;
 
@@ -21,7 +34,7 @@ export function TeacherDashboard() {
         </Link>
       </div>
 
-      {!data || data.length === 0 ? (
+      {!data || data.rows.length === 0 ? (
         <Card>
           <EmptyState title="No courses yet">
             <p className="muted">Create your first course to publish examinations.</p>
@@ -32,7 +45,7 @@ export function TeacherDashboard() {
         </Card>
       ) : (
         <div className="grid">
-          {data.map((course) => (
+          {data.rows.map((course) => (
             <Card key={course.id}>
               <div className="row-between">
                 <strong>{course.course_code}</strong>
@@ -50,6 +63,16 @@ export function TeacherDashboard() {
           ))}
         </div>
       )}
+      {data ? (
+        <Pagination
+          label="courses"
+          page={table.page}
+          pageSize={table.pageSize}
+          total={data.total}
+          onPageChange={table.setPage}
+          onPageSizeChange={table.setPageSize}
+        />
+      ) : null}
     </div>
   );
 }

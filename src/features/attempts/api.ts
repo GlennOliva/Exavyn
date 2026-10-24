@@ -6,6 +6,7 @@ import type {
   AttemptReview,
   MyExamAttempts,
   MyResultRow,
+  MyResultsPage,
   ResultData,
   SaveAnswerResult,
   StartAttemptResult,
@@ -26,11 +27,15 @@ export async function startAttempt(
 }
 
 export async function getAttemptReview(attemptId: string): Promise<AttemptReview> {
-  const { data, error } = await supabase.rpc('get_attempt_review', {
-    p_attempt_id: attemptId,
-  });
+  const [{ data, error }, release] = await Promise.all([
+    supabase.rpc('get_attempt_review', { p_attempt_id: attemptId }),
+    supabase.rpc('get_attempt_release_status', { p_attempt_id: attemptId }),
+  ]);
   if (error) throw toAppError(error);
-  return data as unknown as AttemptReview;
+  if (release.error) throw toAppError(release.error);
+  const review = data as unknown as AttemptReview;
+  const status = release.data as unknown as { review?: { at?: string | null } };
+  return { ...review, review_release_at: status.review?.at ?? null };
 }
 
 export async function acquireAttemptController(
@@ -56,7 +61,7 @@ export async function getAttemptPayload(attemptId: string): Promise<AttemptPaylo
 export async function saveAnswer(params: {
   attemptId: string;
   questionId: string;
-  optionId: string;
+  optionId: string | null;
   revision: number;
   requestId: string;
   controllerToken: string;
@@ -110,9 +115,15 @@ export async function submitAttempt(
 }
 
 export async function getResult(attemptId: string): Promise<ResultData> {
-  const { data, error } = await supabase.rpc('get_result', { p_attempt_id: attemptId });
+  const [{ data, error }, release] = await Promise.all([
+    supabase.rpc('get_result', { p_attempt_id: attemptId }),
+    supabase.rpc('get_attempt_release_status', { p_attempt_id: attemptId }),
+  ]);
   if (error) throw toAppError(error);
-  return data as unknown as ResultData;
+  if (release.error) throw toAppError(release.error);
+  const result = data as unknown as ResultData;
+  const status = release.data as unknown as { review?: { at?: string | null } };
+  return { ...result, review_release_at: status.review?.at ?? null };
 }
 
 export async function sendHeartbeat(
@@ -146,4 +157,18 @@ export async function getMyResults(): Promise<MyResultRow[]> {
   const { data, error } = await supabase.rpc('get_my_results');
   if (error) throw toAppError(error);
   return (data as unknown as MyResultRow[]) ?? [];
+}
+
+export async function getMyResultsPage(params: {
+  page: number;
+  pageSize: number;
+  q: string;
+}): Promise<MyResultsPage> {
+  const { data, error } = await supabase.rpc('get_my_results_page', {
+    p_search: params.q,
+    p_page: params.page,
+    p_page_size: params.pageSize,
+  });
+  if (error) throw toAppError(error);
+  return data as unknown as MyResultsPage;
 }

@@ -7,8 +7,15 @@ import {
   getAttemptIdForExam,
   getControllerToken,
   setAttemptIdForExam,
+  setAttemptMonitoringMode,
   setControllerToken,
+  type AttemptMonitoringMode,
 } from '../../features/attempts/storage';
+import {
+  detectFullscreenCapability,
+  FULLSCREEN_FALLBACK_MESSAGE,
+  requestExamFullscreen,
+} from '../../features/exam/fullscreen';
 import { Alert, Button, Card, PageSpinner } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
 import { formatDateTimeWithZone } from '../../lib/format';
@@ -42,22 +49,22 @@ export function ExamInstructionsPage() {
   const remainingAttempts = Math.max(maxAttempts - usedAttempts, 0);
   const resultPolicy = attempts?.result_policy ?? exam.result_policy ?? 'latest';
   const attemptsExhausted = remainingAttempts === 0 && !resumedAttemptId;
-  const strictSupported =
-    typeof document !== 'undefined' &&
-    'fullscreenEnabled' in document &&
-    document.fullscreenEnabled &&
-    'visibilityState' in document;
+  const fullscreen = detectFullscreenCapability();
+  const canRequestFullscreen = fullscreen.supported;
 
   const begin = async () => {
     setBusy(true);
     setError(null);
+    let monitoringMode: AttemptMonitoringMode = 'fallback';
+    let enteredFullscreen = false;
     try {
-      if (!strictSupported) {
-        throw new Error('This browser does not support fullscreen exam mode.');
-      }
-      // Fullscreen must be requested from a user gesture.
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
+      // Request fullscreen directly from the click/tap gesture when the
+      // runtime says it is available. A rejection is not a violation and does
+      // not block the exam: it selects the accessible viewport fallback.
+      if (canRequestFullscreen) {
+        const requested = await requestExamFullscreen();
+        enteredFullscreen = requested.ok;
+        monitoringMode = requested.ok ? 'fullscreen' : 'fallback';
       }
       // Resuming reuses the stored controller token so the server can confirm
       // this session already holds the lease; a fresh start passes null.
@@ -65,8 +72,16 @@ export function ExamInstructionsPage() {
       const result = await startAttempt(examId, currentToken);
       setAttemptIdForExam(examId, result.attempt_id);
       setControllerToken(result.attempt_id, result.controller_token);
+      setAttemptMonitoringMode(result.attempt_id, monitoringMode);
       navigate(`/student/exams/${examId}/take`, { replace: true });
     } catch (err) {
+      if (enteredFullscreen && document.fullscreenElement) {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          /* best effort only; an unsupported exit is harmless here */
+        }
+      }
       setError(errorMessage(err));
     } finally {
       setBusy(false);
@@ -142,8 +157,10 @@ export function ExamInstructionsPage() {
               warning. Leaving a second time automatically submits your saved answers.
             </li>
             <li>
-              The exam runs in fullscreen. Leaving fullscreen, switching tabs, or losing window
-              focus may be recorded as a departure.
+              When the browser supports it, the exam runs in fullscreen. Leaving fullscreen,
+              switching tabs, or losing window focus may be recorded as a departure. Where
+              fullscreen is unavailable, the exam uses a focused layout and still monitors tab
+              and window visibility where the browser reports it.
             </li>
             <li>
               <strong>Final-score rule:</strong> manual submission, time expiry, and the second
@@ -164,10 +181,10 @@ export function ExamInstructionsPage() {
           </p>
         </Alert>
 
-        {!strictSupported ? (
-          <Alert tone="danger" role="alert">
-            Your browser does not support the required fullscreen and visibility APIs. You cannot
-            start this exam here. Please use a supported desktop browser.
+        {!canRequestFullscreen ? (
+          <Alert tone="info" role="status">
+            <strong>Fullscreen is not available in this browser.</strong>{' '}
+            {FULLSCREEN_FALLBACK_MESSAGE} You can still start, answer, save, and submit this exam.
           </Alert>
         ) : null}
         {availability === 'upcoming' ? (
@@ -214,7 +231,6 @@ export function ExamInstructionsPage() {
             variant="primary"
             disabled={
               !acknowledged ||
-              !strictSupported ||
               busy ||
               availability !== 'open' ||
               attemptsExhausted
@@ -223,11 +239,17 @@ export function ExamInstructionsPage() {
           >
             {busy
               ? 'Starting…'
-              : resumedAttemptId
-                ? 'Resume exam'
-                : maxAttempts > 1
-                  ? `Enter fullscreen & start attempt ${usedAttempts + 1}`
-                  : 'Enter fullscreen & start'}
+              : canRequestFullscreen
+                ? resumedAttemptId
+                  ? 'Resume exam'
+                  : maxAttempts > 1
+                    ? `Enter fullscreen & start attempt ${usedAttempts + 1}`
+                    : 'Enter fullscreen & start'
+                : resumedAttemptId
+                  ? 'Resume exam'
+                  : maxAttempts > 1
+                    ? `Start attempt ${usedAttempts + 1}`
+                    : 'Start exam'}
           </Button>
         </div>
       </Card>

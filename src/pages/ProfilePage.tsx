@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../features/auth/AuthContext';
 import { Alert, Button, Card, Field, TextInput } from '../components/ui';
 import { errorMessage } from '../lib/errors';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 export function ProfilePage() {
   const { user, refresh } = useAuth();
@@ -54,6 +55,21 @@ export function ProfilePage() {
             Save
           </Button>
         </form>
+      </Card>
+      <Card>
+        <h2>Settings</h2>
+        <div className="settings-row">
+          <div>
+            <h3 id="appearance-heading">Appearance</h3>
+            <p className="muted small" id="appearance-hint">
+              Choose Light, Dark, or System. System follows your device setting and updates when
+              it changes.
+            </p>
+          </div>
+          <div className="settings-control">
+            <ThemeToggle />
+          </div>
+        </div>
       </Card>
     </div>
   );

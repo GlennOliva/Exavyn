@@ -1,14 +1,27 @@
 import { useParams } from 'react-router-dom';
 import { useAsync } from '../../lib/useAsync';
-import { listAttemptViolations } from '../../features/results/api';
+import { listAttemptViolationsPage } from '../../features/results/api';
 import { getResult } from '../../features/attempts/api';
 import { Alert, Badge, Card, PageSpinner, StatusBadge } from '../../components/ui';
+import { ScoreBadge } from '../../components/ScoreBadge';
 import { formatDateTime, percent, submissionReasonLabel } from '../../lib/format';
+import { useClampPage, usePageState } from '../../lib/pagination';
+import { Pagination } from '../../components/Pagination';
 
 export function AttemptDetailPage() {
   const { attemptId = '' } = useParams();
+  const table = usePageState();
   const result = useAsync(() => getResult(attemptId), [attemptId]);
-  const violations = useAsync(() => listAttemptViolations(attemptId), [attemptId]);
+  const violations = useAsync(
+    () =>
+      listAttemptViolationsPage(attemptId, {
+        page: table.page,
+        pageSize: table.pageSize,
+      }),
+    [attemptId, table.page, table.pageSize],
+  );
+  useClampPage(table.page, table.pageSize, violations.data?.total ?? 0, table.setPage);
+  const violationRows = violations.data?.rows ?? [];
 
   if (result.loading) return <PageSpinner />;
   if (result.error) return <Alert tone="danger" role="alert">{result.error}</Alert>;
@@ -47,6 +60,22 @@ export function AttemptDetailPage() {
         ) : (
           <p className="muted">This attempt is still in progress.</p>
         )}
+        {r ? (
+          <p className="mt-2">
+            <ScoreBadge
+              percentage={r.percentage}
+              earnedPoints={r.earned_points}
+              maxPoints={r.max_points}
+              passThreshold={r.pass_threshold}
+              state={r.attempt_state}
+            />{' '}
+            {r.pass_threshold !== null && r.pass_threshold !== undefined ? (
+              <span className="muted small">Pass mark: {percent(r.pass_threshold)}</span>
+            ) : (
+              <span className="muted small">No passing threshold configured.</span>
+            )}
+          </p>
+        ) : null}
         <p className="mt-2">
           <Badge tone="info">{submissionReasonLabel(r?.submission_reason ?? null)}</Badge>{' '}
           <span className="muted small">Submitted {formatDateTime(r?.submitted_at)}</span>
@@ -57,10 +86,10 @@ export function AttemptDetailPage() {
         <h2>Violation timeline</h2>
         {violations.loading ? <PageSpinner /> : null}
         {violations.error ? <Alert tone="danger">{violations.error}</Alert> : null}
-        {violations.data && violations.data.length === 0 ? (
+        {violations.data && violationRows.length === 0 ? (
           <p className="muted">No violation episodes recorded.</p>
         ) : null}
-        {violations.data && violations.data.length > 0 ? (
+        {violationRows.length > 0 ? (
           <div className="table-wrap">
             <table>
               <thead>
@@ -72,7 +101,7 @@ export function AttemptDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {violations.data.map((event) => (
+                {violationRows.map((event) => (
                   <tr key={event.id}>
                     <td className="mono small">{event.episode_id.slice(0, 8)}…</td>
                     <td>
@@ -89,6 +118,16 @@ export function AttemptDetailPage() {
               </tbody>
             </table>
           </div>
+        ) : null}
+        {violations.data ? (
+          <Pagination
+            label="violation timeline"
+            page={table.page}
+            pageSize={table.pageSize}
+            total={violations.data.total}
+            onPageChange={table.setPage}
+            onPageSizeChange={table.setPageSize}
+          />
         ) : null}
       </Card>
     </div>

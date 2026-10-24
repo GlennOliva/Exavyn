@@ -23,6 +23,9 @@ export interface ExamDraftInput {
   question_randomization: boolean;
   option_randomization: boolean;
   result_release: ResultReleasePolicy;
+  result_release_at?: string | null;
+  answer_release_at?: string | null;
+  timezone?: string | null;
   max_attempts: number;
   result_policy: MultiAttemptPolicy;
   answer_review: AnswerReviewPolicy;

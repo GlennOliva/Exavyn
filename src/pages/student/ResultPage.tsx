@@ -2,8 +2,11 @@ import { Link, useParams } from 'react-router-dom';
 import { useAsync } from '../../lib/useAsync';
 import { getResult } from '../../features/attempts/api';
 import { Alert, Badge, Button, Card, PageSpinner, StatusBadge } from '../../components/ui';
+import { FeedbackForm } from '../../features/feedback/FeedbackForm';
+import { ScoreBadge } from '../../components/ScoreBadge';
 import {
   formatDateTime,
+  formatDateTimeWithZone,
   formatDuration,
   percent,
   reviewUnavailableReasonText,
@@ -30,9 +33,6 @@ export function ResultPage() {
       </div>
     );
   }
-
-  const hasThreshold = data.pass_threshold !== null && data.pass_threshold !== undefined;
-  const passed = data.passed === true;
 
   return (
     <div className="narrow stack">
@@ -69,22 +69,29 @@ export function ResultPage() {
                 <div className="stat-label">Answered</div>
               </div>
             </div>
-            {hasThreshold ? (
-              <p className="mt-2">
-                <Badge tone={passed ? 'success' : 'danger'}>
-                  {passed ? 'Passed' : 'Not passed'}
-                </Badge>{' '}
-                <span className="muted small">
-                  Pass mark: {percent(data.pass_threshold)} · your score {percent(data.percentage)}
-                </span>
-              </p>
-            ) : null}
+            <p className="mt-2">
+              <ScoreBadge
+                percentage={data.percentage}
+                earnedPoints={data.earned_points}
+                maxPoints={data.max_points}
+                passThreshold={data.pass_threshold}
+                state={data.attempt_state}
+                released={data.released}
+              />{' '}
+              <span className="muted small">
+                {data.pass_threshold === null || data.pass_threshold === undefined
+                  ? 'No passing threshold was configured for this exam.'
+                  : `Pass mark: ${percent(data.pass_threshold)} · your score ${percent(data.percentage)}`}
+              </span>
+            </p>
           </>
         ) : (
           <Alert tone="warning" role="status">
-            Scores are released{' '}
-            {data.result_release === 'after_close' ? 'after the exam closes' : 'shortly'}. Check
-            back later.
+            {data.result_release === 'after_close'
+              ? 'Submitted - results are available after the exam closes.'
+              : data.result_release === 'scheduled'
+                ? `Submitted - results are available at ${formatDateTimeWithZone(data.result_release_at)}.`
+                : 'Submitted - results are not available yet.'}
           </Alert>
         )}
 
@@ -118,9 +125,17 @@ export function ResultPage() {
           </>
         ) : (
           <Alert tone="warning" role="status">
-            {reviewUnavailableReasonText(data.review_reason)}
+            {data.review_reason === 'awaiting_scheduled' && data.review_release_at
+              ? `Correct answers will be visible at ${formatDateTimeWithZone(data.review_release_at)}.`
+              : reviewUnavailableReasonText(data.review_reason)}
           </Alert>
         )}
+      </Card>
+
+      <Card>
+        <h2>Feedback</h2>
+        <p className="muted small">Share optional feedback about this exam. Feedback does not affect result release.</p>
+        <FeedbackForm examId={data.exam_id ?? null} postExam />
       </Card>
 
       <div className="row">

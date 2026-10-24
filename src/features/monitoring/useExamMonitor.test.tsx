@@ -14,13 +14,14 @@ let visibility: 'visible' | 'hidden' = 'visible';
 let focused = true;
 let fullscreenEl: Element | null = null;
 
-function renderMonitor(attemptId: string) {
+function renderMonitor(attemptId: string, fullscreenRequired = true) {
   return renderHook(() =>
     useExamMonitor({
       attemptId,
       controllerToken: `token-${attemptId}`,
       initialViolationCount: 0,
       enabled: true,
+      fullscreenRequired,
     }),
   );
 }
@@ -113,5 +114,51 @@ describe('useExamMonitor departure wiring', () => {
 
     await waitFor(() => expect(recordViolation).toHaveBeenCalledTimes(1));
     expect(signals()).toContain('fullscreen_exit');
+  });
+});
+
+
+describe('useExamMonitor accessible fallback', () => {
+  it('does not report fullscreen exit when fullscreen is not required', async () => {
+    const { unmount } = renderMonitor('fallback-1', false);
+
+    await act(async () => {
+      document.dispatchEvent(new Event('fullscreenchange'));
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(recordViolation).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('still reports a real tab/app switch in fallback mode', async () => {
+    const { unmount } = renderMonitor('fallback-2', false);
+
+    await act(async () => {
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    await waitFor(() => expect(recordViolation).toHaveBeenCalledTimes(1));
+    expect(signals()).toContain('visibility_hidden');
+    unmount();
+  });
+
+  it('does not require fullscreen to recover in fallback mode', async () => {
+    const { unmount } = renderMonitor('fallback-3', false);
+
+    await act(async () => {
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(recordViolation).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      visibility = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(recordViolation).toHaveBeenCalledTimes(1);
+    unmount();
   });
 });

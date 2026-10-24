@@ -12,6 +12,7 @@ export function LoginPage() {
   const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -60,14 +61,20 @@ export function LoginPage() {
             />
           </Field>
           <Field label="Password" htmlFor="password">
-            <TextInput
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <div className="row" style={{ gap: 8 }}>
+              <TextInput
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <Button type="button" variant="ghost" onClick={() => setShowPassword((v) => !v)}>
+                {showPassword ? 'Hide' : 'Show'}
+              </Button>
+            </div>
           </Field>
           <Button type="submit" variant="primary" block disabled={submitting}>
             {submitting ? 'Signing in…' : 'Sign in'}

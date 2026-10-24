@@ -16,6 +16,13 @@ export interface UseExamMonitorOptions {
   initialViolationCount: number;
   threshold?: number;
   enabled: boolean;
+  /**
+   * Whether recovery requires native fullscreen. Devices using the accessible
+   * viewport fallback pass `false`: visibility and focus are still monitored,
+   * but the absence of the Fullscreen API never blocks recovery or counts as a
+   * departure.
+   */
+  fullscreenRequired?: boolean;
   onViolation?: (result: ViolationResult) => void;
 }
 
@@ -41,6 +48,7 @@ export function useExamMonitor(options: UseExamMonitorOptions): ExamMonitorApi {
     initialViolationCount,
     threshold = VIOLATION_THRESHOLD,
     enabled,
+    fullscreenRequired = true,
     onViolation,
   } = options;
 
@@ -129,9 +137,11 @@ export function useExamMonitor(options: UseExamMonitorOptions): ExamMonitorApi {
     trackerRef.current.observeRecovery({
       visible: document.visibilityState === 'visible',
       focused: document.hasFocus(),
-      fullscreen: Boolean(document.fullscreenElement),
+      // In fallback mode there is no fullscreen requirement, so recovery must
+      // succeed when the page is visible and focused again.
+      fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
     });
-  }, []);
+  }, [fullscreenRequired]);
 
   // Browser listeners. Removed the moment the attempt is finalized so cleanup
   // during exit/navigation cannot create another episode.
@@ -155,6 +165,9 @@ export function useExamMonitor(options: UseExamMonitorOptions): ExamMonitorApi {
       observeRecovery();
     };
     const onFullscreenChange = () => {
+      // A device using the accessible fallback must never be penalised for the
+      // absence of the Fullscreen API. Only listen when fullscreen is required.
+      if (!fullscreenRequired) return;
       if (!document.fullscreenElement) emitDeparture('fullscreen_exit');
       else observeRecovery();
     };
@@ -208,7 +221,7 @@ export function useExamMonitor(options: UseExamMonitorOptions): ExamMonitorApi {
       channel?.close();
       channelRef.current = null;
     };
-  }, [enabled, attemptId, controllerToken, isFinalized, emitDeparture, observeRecovery, flushPending]);
+  }, [enabled, attemptId, controllerToken, isFinalized, fullscreenRequired, emitDeparture, observeRecovery, flushPending]);
 
   // Let any other same-browser tab know the attempt is over.
   useEffect(() => {

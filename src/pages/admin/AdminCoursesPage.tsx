@@ -1,47 +1,52 @@
-import { useState } from 'react';
 import { useAsync } from '../../lib/useAsync';
-import { listAllCourses } from '../../features/admin/api';
+import { listAllCoursesPage, type AdminCoursePageRow } from '../../features/admin/api';
 import { Alert, Badge, PageSpinner, TextInput } from '../../components/ui';
 import { formatDateTime } from '../../lib/format';
-
-interface AdminCourse {
-  id: string;
-  title: string;
-  course_code: string;
-  section: string;
-  academic_term: string;
-  archived: boolean;
-  created_at: string;
-  owner: { full_name: string; email: string | null } | null;
-}
+import { useClampPage, usePageState } from '../../lib/pagination';
+import { Pagination } from '../../components/Pagination';
 
 export function AdminCoursesPage() {
-  const { data, loading, error } = useAsync(() => listAllCourses(), []);
-  const [query, setQuery] = useState('');
+  const table = usePageState();
+  const archived = (table.getFilter('archived') || 'all') as 'all' | 'active' | 'archived';
+  const { data, loading, error } = useAsync(
+    () =>
+      listAllCoursesPage({
+        page: table.page,
+        pageSize: table.pageSize,
+        q: table.q,
+        archived,
+      }),
+    [table.page, table.pageSize, table.q, archived],
+  );
+  useClampPage(table.page, table.pageSize, data?.total ?? 0, table.setPage);
   if (loading) return <PageSpinner />;
   if (error) return <Alert tone="danger" role="alert">{error}</Alert>;
 
-  const needle = query.trim().toLowerCase();
-  const courses = ((data as unknown as AdminCourse[] | null) ?? []).filter((course) => {
-    if (!needle) return true;
-    return (
-      course.course_code.toLowerCase().includes(needle) ||
-      course.title.toLowerCase().includes(needle) ||
-      (course.section ?? '').toLowerCase().includes(needle) ||
-      (course.owner?.full_name ?? '').toLowerCase().includes(needle)
-    );
-  });
+  const courses = (data?.rows ?? []) as AdminCoursePageRow[];
 
   return (
     <div className="stack">
       <h1>Course directory</h1>
-      <TextInput
-        type="search"
-        aria-label="Search courses"
-        placeholder="Search by code, title, section, or owner…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      <div className="row">
+        <TextInput
+          type="search"
+          aria-label="Search courses"
+          placeholder="Search by code, title, section, or owner…"
+          value={table.q}
+          onChange={(e) => table.setQuery(e.target.value)}
+        />
+        <select
+          aria-label="Filter by archive state"
+          value={archived}
+          onChange={(e) =>
+            table.setFilter('archived', e.target.value === 'all' ? '' : e.target.value)
+          }
+        >
+          <option value="all">All courses</option>
+          <option value="active">Active</option>
+          <option value="archived">Archived</option>
+        </select>
+      </div>
       <div className="table-wrap">
         <table>
           <thead>
@@ -56,6 +61,13 @@ export function AdminCoursesPage() {
             </tr>
           </thead>
           <tbody>
+            {courses.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="muted center">
+                  No courses match the current filters.
+                </td>
+              </tr>
+            ) : null}
             {courses.map((course) => (
               <tr key={course.id}>
                 <td className="mono">{course.course_code}</td>
@@ -74,6 +86,14 @@ export function AdminCoursesPage() {
           </tbody>
         </table>
       </div>
+      <Pagination
+        label="courses"
+        page={table.page}
+        pageSize={table.pageSize}
+        total={data?.total ?? 0}
+        onPageChange={table.setPage}
+        onPageSizeChange={table.setPageSize}
+      />
     </div>
   );
 }

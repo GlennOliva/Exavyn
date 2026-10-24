@@ -68,7 +68,7 @@ test.describe('authenticated exam interface', () => {
     await page.goto(`/student/exams/${examId}`);
 
     await page.getByLabel(/I have read and accept/i).check();
-    await page.getByRole('button', { name: /enter fullscreen & start|resume exam/i }).click();
+    await page.getByRole('button', { name: /enter fullscreen & start|start exam|resume exam/i }).click();
 
     // If the environment refuses fullscreen, skip rather than report a false failure.
     const started = page.getByRole('button', { name: /submit exam/i });

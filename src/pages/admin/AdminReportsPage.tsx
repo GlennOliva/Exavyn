@@ -1,30 +1,52 @@
 import { useState } from 'react';
 import { useAsync } from '../../lib/useAsync';
-import { listAllAttempts, type AdminAttemptRow } from '../../features/admin/api';
+import { listAllAttemptsPage, type AdminAttemptRow } from '../../features/admin/api';
 import { Alert, Button, PageSpinner, StatusBadge, TextInput } from '../../components/ui';
+import { ScoreBadge } from '../../components/ScoreBadge';
+import { classifyScore } from '../../features/results/score';
 import { downloadCsv, toCsv } from '../../lib/csv';
 import { formatDateTime, percent, submissionReasonLabel } from '../../lib/format';
+import { useClampPage, usePageState } from '../../lib/pagination';
+import { Pagination } from '../../components/Pagination';
 
 export function AdminReportsPage() {
-  const { data, loading, error } = useAsync(() => listAllAttempts(), []);
-  const [onlyFlagged, setOnlyFlagged] = useState(false);
-  const [query, setQuery] = useState('');
+  const table = usePageState();
+  const onlyFlagged = table.getFilter('flagged') === '1';
+  const { data, loading, error } = useAsync(
+    () =>
+      listAllAttemptsPage({
+        page: table.page,
+        pageSize: table.pageSize,
+        q: table.q,
+        onlyFlagged,
+      }),
+    [table.page, table.pageSize, table.q, onlyFlagged],
+  );
+  useClampPage(table.page, table.pageSize, data?.total ?? 0, table.setPage);
+  const [exporting, setExporting] = useState(false);
 
   if (loading) return <PageSpinner />;
   if (error) return <Alert tone="danger" role="alert">{error}</Alert>;
 
-  const needle = query.trim().toLowerCase();
-  const attempts = (data ?? []).filter((a) => {
-    if (onlyFlagged && a.violation_count <= 0) return false;
-    if (!needle) return true;
-    return (
-      (a.student?.full_name ?? '').toLowerCase().includes(needle) ||
-      (a.student?.email ?? '').toLowerCase().includes(needle)
-    );
-  });
+  const attempts = data?.rows ?? [];
 
-  const exportCsv = () => {
-    const csv = toCsv(
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const all: AdminAttemptRow[] = [];
+      let exportPage = 1;
+      for (;;) {
+        const chunk = await listAllAttemptsPage({
+          page: exportPage,
+          pageSize: 50,
+          q: table.q,
+          onlyFlagged,
+        });
+        all.push(...chunk.rows);
+        if (chunk.rows.length === 0 || all.length >= chunk.total) break;
+        exportPage += 1;
+      }
+      const csv = toCsv(
       [
         'Student',
         'Email',
@@ -34,23 +56,34 @@ export function AdminReportsPage() {
         'Earned',
         'Max',
         'Percentage',
+        'Result',
         'Started',
         'Submitted',
       ],
-      attempts.map((a) => [
-        a.student?.full_name ?? '',
-        a.student?.email ?? '',
-        a.state,
-        a.violation_count,
-        a.submission_reason ?? '',
-        a.earned_points ?? '',
-        a.max_points ?? '',
-        a.percentage ?? '',
-        a.started_at,
-        a.submitted_at ?? '',
-      ]),
-    );
-    downloadCsv('exam-attempts-report.csv', csv);
+        all.map((a) => [
+          a.student?.full_name ?? '',
+          a.student?.email ?? '',
+          a.state,
+          a.violation_count,
+          a.submission_reason ?? '',
+          a.earned_points ?? '',
+          a.max_points ?? '',
+          a.percentage ?? '',
+          classifyScore({
+            percentage: a.percentage,
+            earnedPoints: a.earned_points,
+            maxPoints: a.max_points,
+            passThreshold: a.pass_threshold,
+            state: a.state,
+          }).label,
+          a.started_at,
+          a.submitted_at ?? '',
+        ]),
+      );
+      downloadCsv('exam-attempts-report.csv', csv);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -62,18 +95,20 @@ export function AdminReportsPage() {
             type="search"
             aria-label="Search reports"
             placeholder="Search by student…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={table.q}
+            onChange={(e) => table.setQuery(e.target.value)}
           />
           <label className="row small">
             <input
               type="checkbox"
               checked={onlyFlagged}
-              onChange={(e) => setOnlyFlagged(e.target.checked)}
+              onChange={(e) => table.setFilter('flagged', e.target.checked ? '1' : '')}
             />
             Flagged only
           </label>
-          <Button onClick={exportCsv}>Export CSV</Button>
+          <Button onClick={() => void exportCsv()} disabled={exporting}>
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </Button>
         </div>
       </div>
       <p className="muted small">
@@ -93,6 +128,13 @@ export function AdminReportsPage() {
             </tr>
           </thead>
           <tbody>
+            {attempts.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="muted center">
+                  No attempts match the current filters.
+                </td>
+              </tr>
+            ) : null}
             {attempts.map((attempt: AdminAttemptRow) => (
               <tr key={attempt.id}>
                 <td>
@@ -105,9 +147,18 @@ export function AdminReportsPage() {
                 <td>{attempt.violation_count}</td>
                 <td>{submissionReasonLabel(attempt.submission_reason)}</td>
                 <td>
-                  {attempt.state === 'submitted'
-                    ? `${attempt.earned_points ?? 0}/${attempt.max_points ?? 0} (${percent(attempt.percentage)})`
-                    : '—'}
+                  {attempt.state === 'submitted' ? (
+                    <span>
+                      {`${attempt.earned_points ?? 0}/${attempt.max_points ?? 0} (${percent(attempt.percentage)})`}{' '}
+                    </span>
+                  ) : null}
+                  <ScoreBadge
+                    percentage={attempt.percentage}
+                    earnedPoints={attempt.earned_points}
+                    maxPoints={attempt.max_points}
+                    passThreshold={attempt.pass_threshold}
+                    state={attempt.state}
+                  />
                 </td>
                 <td className="small muted">{formatDateTime(attempt.started_at)}</td>
               </tr>
@@ -115,6 +166,14 @@ export function AdminReportsPage() {
           </tbody>
         </table>
       </div>
+      <Pagination
+        label="attempt reports"
+        page={table.page}
+        pageSize={table.pageSize}
+        total={data?.total ?? 0}
+        onPageChange={table.setPage}
+        onPageSizeChange={table.setPageSize}
+      />
     </div>
   );
 }

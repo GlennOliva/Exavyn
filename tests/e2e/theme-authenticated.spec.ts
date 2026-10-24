@@ -3,8 +3,8 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * Themed authenticated-surface checks.
  *
- * Branding and the theme control must reach the signed-in surfaces (dashboard
- * via the app shell, and the exam instructions page), and the chosen theme must
+ * Branding reaches signed-in surfaces while appearance controls live in
+ * Profile settings. The chosen theme must
  * persist across those pages. Gated on the same hosted credentials as
  * `authenticated.exam.spec.ts`; skipped when absent so the default suite stays
  * green offline.
@@ -31,7 +31,7 @@ test.describe('themed authenticated surface', () => {
     await expect(page).toHaveURL(/\/student(\/|$)/, { timeout: 15_000 });
   }
 
-  test('dashboard shows the brand and theme control, and the choice persists', async ({ page }) => {
+  test('profile settings expose theme controls and the choice persists', async ({ page }) => {
     const errors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') errors.push(msg.text());
@@ -39,6 +39,7 @@ test.describe('themed authenticated surface', () => {
 
     await signIn(page);
     await expect(page.getByAltText('Exavyn')).toBeVisible();
+    await page.goto('/profile');
     await expect(page.getByRole('group', { name: 'Color theme' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Dark' }).click();
@@ -58,6 +59,7 @@ test.describe('themed authenticated surface', () => {
   test('the chosen theme carries into the exam instructions page', async ({ page }) => {
     test.skip(!examId, 'set E2E_EXAM_ID to run this check');
     await signIn(page);
+    await page.goto('/profile');
     await page.getByRole('button', { name: 'Dark' }).click();
     await page.goto(`/student/exams/${examId}`);
     expect(await resolvedTheme(page)).toBe('dark');
