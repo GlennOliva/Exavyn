@@ -22,9 +22,11 @@ export type EnrollmentStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn'
 export type ExamState = 'draft' | 'published' | 'archived';
 export type AttemptState = 'in_progress' | 'submitted';
 export type SubmissionReason = 'manual' | 'violation_limit' | 'time_expired';
-export type ResultReleasePolicy = 'immediate' | 'after_close';
+export type ResultReleasePolicy = 'immediate' | 'after_close' | 'scheduled';
 export type MultiAttemptPolicy = 'latest' | 'highest';
-export type AnswerReviewPolicy = 'immediate' | 'after_attempts' | 'after_close' | 'never';
+export type AnswerReviewPolicy = 'immediate' | 'after_attempts' | 'after_close' | 'never' | 'scheduled';
+export type FeedbackCategory = 'bug' | 'suggestion' | 'exam_concern' | 'other';
+export type FeedbackStatus = 'new' | 'in_review' | 'resolved';
 
 export type ProfileRow = {
   id: string;
@@ -96,6 +98,9 @@ export type ExamRow = {
   result_policy: MultiAttemptPolicy;
   answer_review: AnswerReviewPolicy;
   pass_threshold: number | null;
+  result_release_at: string | null;
+  answer_release_at: string | null;
+  timezone: string;
   state: ExamState;
   current_version_id: string | null;
   archived: boolean;
@@ -169,6 +174,9 @@ export type ExamAttemptRow = {
   result_release: ResultReleasePolicy;
   answer_review: AnswerReviewPolicy;
   pass_threshold: number | null;
+  result_release_at: string | null;
+  answer_release_at: string | null;
+  timezone: string | null;
   controller_token: string;
   controller_lease_expires_at: string;
   submitted_at: string | null;
@@ -187,7 +195,7 @@ export type AttemptAnswerRow = {
   id: string;
   attempt_id: string;
   question_id: string;
-  selected_option_id: string;
+  selected_option_id: string | null;
   revision: number;
   request_id: string;
   answered_at: string;
@@ -219,6 +227,25 @@ export type AuditLogRow = {
   created_at: string;
 };
 
+export type FeedbackRow = {
+  id: string;
+  exam_id: string | null;
+  course_id: string | null;
+  question_id: string | null;
+  student_id: string;
+  category: FeedbackCategory;
+  subject: string;
+  message: string;
+  rating: number | null;
+  comment: string | null;
+  status: FeedbackStatus;
+  staff_notes: string | null;
+  response: string | null;
+  request_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
 type Table<Row> = {
   Row: Row;
   Insert: Partial<Row>;
@@ -243,6 +270,12 @@ export type Database = {
       attempt_answers: Table<AttemptAnswerRow>;
       violation_events: Table<ViolationEventRow>;
       attempt_heartbeats: Table<AttemptHeartbeatRow>;
+      attempt_bookmarks: Table<{
+        Row: { id: string; attempt_id: string; question_id: string; created_at: string };
+        Insert: { id?: string; attempt_id: string; question_id: string; created_at?: string };
+        Update: Partial<{ id: string; attempt_id: string; question_id: string; created_at: string }>;
+      }>;
+      exam_feedback: Table<FeedbackRow>;
       audit_logs: Table<AuditLogRow>;
     };
     Views: Record<string, never>;
@@ -295,6 +328,9 @@ export type Database = {
           p_result_policy: MultiAttemptPolicy;
           p_answer_review: AnswerReviewPolicy;
           p_pass_threshold: number | null;
+          p_result_release_at?: string | null;
+          p_answer_release_at?: string | null;
+          p_timezone?: string;
         };
         Returns: undefined;
       };
@@ -303,6 +339,10 @@ export type Database = {
       get_join_code: { Args: { p_course_id: string }; Returns: Json };
       get_my_exam_attempts: { Args: { p_exam_id: string }; Returns: Json };
       get_my_results: { Args: Record<string, never>; Returns: Json };
+      get_my_results_page: {
+        Args: { p_search?: string; p_page?: number; p_page_size?: number };
+        Returns: Json;
+      };
       start_attempt: {
         Args: { p_exam_id: string; p_current_token?: string | null };
         Returns: Json;
@@ -316,7 +356,7 @@ export type Database = {
         Args: {
           p_attempt_id: string;
           p_question_id: string;
-          p_option_id: string;
+          p_option_id: string | null;
           p_revision: number;
           p_request_id: string;
           p_controller_token: string;
@@ -338,6 +378,7 @@ export type Database = {
         Returns: Json;
       };
       get_result: { Args: { p_attempt_id: string }; Returns: Json };
+      get_attempt_release_status: { Args: { p_attempt_id: string }; Returns: Json };
       get_attempt_review: { Args: { p_attempt_id: string }; Returns: Json };
       heartbeat: {
         Args: { p_attempt_id: string; p_controller_token: string; p_seq: number };
@@ -353,6 +394,26 @@ export type Database = {
         Returns: undefined;
       };
       admin_dashboard_stats: { Args: Record<string, never>; Returns: Json };
+      toggle_bookmark: { Args: { p_attempt_id: string; p_question_id: string; p_controller_token: string }; Returns: Json };
+      get_bookmarks: { Args: { p_attempt_id: string; p_controller_token: string }; Returns: Json };
+      submit_feedback: {
+        Args: {
+          p_category: string;
+          p_subject: string;
+          p_message: string;
+          p_rating?: number | null;
+          p_course_id?: string | null;
+          p_exam_id?: string | null;
+          p_question_id?: string | null;
+          p_request_id?: string;
+        };
+        Returns: string;
+      };
+      get_my_feedback_page: { Args: { p_search?: string; p_status?: string; p_page?: number; p_page_size?: number }; Returns: Json };
+      get_staff_feedback_page: { Args: { p_search?: string; p_status?: string; p_page?: number; p_page_size?: number }; Returns: Json };
+      update_feedback: { Args: { p_feedback_id: string; p_status: string; p_staff_notes: string; p_response: string }; Returns: undefined };
+      get_feedback_summary: { Args: { p_exam_id: string }; Returns: Json };
+      recompute_answered_count: { Args: { p_attempt_id: string }; Returns: number };
     };
     Enums: {
       app_role: AppRole;

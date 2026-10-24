@@ -5,6 +5,11 @@ import type {
   EnrollmentRow,
   ProfileRow,
 } from '../../lib/database.types';
+import {
+  escapePostgrestSearch,
+  pageRange,
+  type PageResult,
+} from '../../lib/pagination';
 
 export async function listTeacherCourses(): Promise<CourseRow[]> {
   const { data, error } = await supabase
@@ -154,4 +159,83 @@ export async function requestEnrollment(joinCode: string): Promise<{
   });
   if (error) throw toAppError(error);
   return data as unknown as { enrollment_id: string; course_id: string; status: string };
+}
+
+
+export async function listTeacherCoursesPage(params: {
+  page: number;
+  pageSize: number;
+  q: string;
+  archived?: 'all' | 'active' | 'archived';
+}): Promise<PageResult<CourseRow>> {
+  const { from, to } = pageRange(params.page, params.pageSize);
+  const needle = escapePostgrestSearch(params.q);
+  let query = supabase.from('courses').select('*', { count: 'exact' });
+  if (params.archived === 'active') query = query.eq('archived', false);
+  if (params.archived === 'archived') query = query.eq('archived', true);
+  if (needle) {
+    query = query.or(
+      `course_code.ilike.%${needle}%,title.ilike.%${needle}%,section.ilike.%${needle}%,academic_term.ilike.%${needle}%`,
+    );
+  }
+  const { data, count, error } = await query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, to);
+  if (error) throw toAppError(error);
+  return { rows: data ?? [], total: count ?? 0 };
+}
+
+export async function listCourseEnrollmentsPage(
+  courseId: string,
+  params: {
+    page: number;
+    pageSize: number;
+    q: string;
+    status?: 'all' | EnrollmentRow['status'];
+  },
+): Promise<PageResult<EnrollmentWithStudent>> {
+  const { from, to } = pageRange(params.page, params.pageSize);
+  const needle = escapePostgrestSearch(params.q);
+  let query = supabase
+    .from('enrollments')
+    .select('*, student:profiles!enrollments_student_id_fkey(id, full_name, email)', {
+      count: 'exact',
+    })
+    .eq('course_id', courseId);
+  if (params.status && params.status !== 'all') query = query.eq('status', params.status);
+  if (needle) {
+    query = query.or(
+      `student.full_name.ilike.%${needle}%,student.email.ilike.%${needle}%`,
+    );
+  }
+  const { data, count, error } = await query
+    .order('requested_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, to);
+  if (error) throw toAppError(error);
+  return { rows: (data ?? []) as unknown as EnrollmentWithStudent[], total: count ?? 0 };
+}
+
+export async function listStudentEnrollmentsPage(params: {
+  page: number;
+  pageSize: number;
+  q: string;
+}): Promise<PageResult<StudentEnrollment>> {
+  const { from, to } = pageRange(params.page, params.pageSize);
+  const needle = escapePostgrestSearch(params.q);
+  let query = supabase
+    .from('enrollments')
+    .select('*, course:courses!enrollments_course_id_fkey(*)', { count: 'exact' });
+  if (needle) {
+    query = query.or(
+      `course.title.ilike.%${needle}%,course.course_code.ilike.%${needle}%`,
+    );
+  }
+  const { data, count, error } = await query
+    .order('requested_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, to);
+  if (error) throw toAppError(error);
+  return { rows: (data ?? []) as unknown as StudentEnrollment[], total: count ?? 0 };
 }

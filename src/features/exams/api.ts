@@ -1,6 +1,11 @@
 import { supabase } from '../../lib/supabase';
 import { toAppError } from '../../lib/errors';
 import type { AnswerReviewPolicy, ExamRow, Json } from '../../lib/database.types';
+import {
+  escapePostgrestSearch,
+  pageRange,
+  type PageResult,
+} from '../../lib/pagination';
 import type { ExamDraftInput, ExamDraftQuestion } from './types';
 
 export async function listExamsForCourse(courseId: string): Promise<ExamRow[]> {
@@ -159,7 +164,10 @@ export async function updateExamSettings(
     opens_at: string;
     closes_at: string;
     duration_minutes: number;
-    result_release: 'immediate' | 'after_close';
+    result_release: 'immediate' | 'after_close' | 'scheduled';
+    result_release_at?: string | null;
+    answer_release_at?: string | null;
+    timezone?: string | null;
     max_attempts: number;
     result_policy: 'latest' | 'highest';
     answer_review: AnswerReviewPolicy;
@@ -178,6 +186,9 @@ export async function updateExamSettings(
     p_result_policy: patch.result_policy,
     p_answer_review: patch.answer_review,
     p_pass_threshold: patch.pass_threshold,
+    p_result_release_at: patch.result_release_at ?? null,
+    p_answer_release_at: patch.answer_release_at ?? null,
+    p_timezone: patch.timezone ?? 'UTC',
   });
   if (error) throw toAppError(error);
 }
@@ -222,4 +233,54 @@ export async function getExamVersion(versionId: string) {
     .maybeSingle();
   if (error) throw toAppError(error);
   return data;
+}
+
+
+export async function listExamsForCoursePage(
+  courseId: string,
+  params: { page: number; pageSize: number; q: string; state?: 'all' | ExamRow['state'] },
+): Promise<PageResult<ExamRow>> {
+  const { from, to } = pageRange(params.page, params.pageSize);
+  const needle = escapePostgrestSearch(params.q);
+  let query = supabase
+    .from('exams')
+    .select('*', { count: 'exact' })
+    .eq('course_id', courseId);
+  if (params.state && params.state !== 'all') query = query.eq('state', params.state);
+  if (needle) query = query.ilike('title', `%${needle}%`);
+  const { data, count, error } = await query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, to);
+  if (error) throw toAppError(error);
+  return { rows: data ?? [], total: count ?? 0 };
+}
+
+export async function listStudentExamsPage(params: {
+  page: number;
+  pageSize: number;
+  q: string;
+  courseId?: string;
+}): Promise<PageResult<StudentExam>> {
+  const { from, to } = pageRange(params.page, params.pageSize);
+  const needle = escapePostgrestSearch(params.q);
+  let query = supabase
+    .from('exams')
+    .select('*, course:courses!exams_course_id_fkey(title, course_code)', {
+      count: 'exact',
+    })
+    .eq('state', 'published')
+    .eq('archived', false);
+  if (params.courseId) query = query.eq('course_id', params.courseId);
+  if (needle) {
+    query = query.or(
+      `title.ilike.%${needle}%,course.title.ilike.%${needle}%,course.course_code.ilike.%${needle}%`,
+    );
+  }
+  const { data, count, error } = await query
+    .order('closes_at', { ascending: true })
+    .order('id', { ascending: true })
+    .range(from, to);
+  if (error) throw toAppError(error);
+  return { rows: (data ?? []) as unknown as StudentExam[], total: count ?? 0 };
 }

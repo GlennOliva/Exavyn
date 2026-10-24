@@ -4,10 +4,16 @@ import type {
   AccountStatus,
   AppRole,
   AuditLogRow,
+  CourseRow,
   ExamRow,
   ProfileRow,
   UserRoleRow,
 } from '../../lib/database.types';
+import {
+  escapePostgrestSearch,
+  pageRange,
+  type PageResult,
+} from '../../lib/pagination';
 
 export interface AdminStats {
   users: number;
@@ -98,6 +104,7 @@ export interface AdminAttemptRow {
   earned_points: number | null;
   max_points: number | null;
   percentage: number | null;
+  pass_threshold: number | null;
   started_at: string;
   submitted_at: string | null;
   student: { full_name: string; email: string | null } | null;
@@ -107,7 +114,7 @@ export async function listAllAttempts(): Promise<AdminAttemptRow[]> {
   const { data, error } = await supabase
     .from('exam_attempts')
     .select(
-      'id, exam_id, student_id, state, violation_count, submission_reason, earned_points, max_points, percentage, started_at, submitted_at, student:profiles!exam_attempts_student_id_fkey(full_name, email)',
+      'id, exam_id, student_id, state, violation_count, submission_reason, earned_points, max_points, percentage, pass_threshold, started_at, submitted_at, student:profiles!exam_attempts_student_id_fkey(full_name, email)',
     )
     .order('started_at', { ascending: false });
   if (error) throw toAppError(error);
@@ -150,4 +157,140 @@ export async function provisionTeacher(input: {
   if (!response.ok) {
     throw toAppError({ message: payload.error ?? 'Could not provision teacher.' });
   }
+}
+
+
+export interface AdminCoursePageRow extends CourseRow {
+  owner: { full_name: string; email: string | null } | null;
+}
+
+function roleFromEmbedded(row: Record<string, unknown>): AppRole | null {
+  const roles = row.user_roles as { role?: AppRole }[] | { role?: AppRole } | null | undefined;
+  if (Array.isArray(roles)) return roles[0]?.role ?? null;
+  return roles?.role ?? null;
+}
+
+/** Server-side paginated user directory (search/filter/count run in Postgres). */
+export async function listUsersPage(params: {
+  page: number;
+  pageSize: number;
+  q: string;
+  role: 'all' | AppRole;
+}): Promise<PageResult<AdminUser>> {
+  const { from, to } = pageRange(params.page, params.pageSize);
+  const needle = escapePostgrestSearch(params.q);
+  let query = supabase
+    .from('profiles')
+    // Every account gets a role from the signup trigger, so an inner embed is
+    // safe and lets Postgres filter by role before pagination.
+    .select('*, user_roles!inner(role)', { count: 'exact' });
+
+  if (params.role !== 'all') query = query.eq('user_roles.role', params.role);
+  if (needle) query = query.or(`full_name.ilike.%${needle}%,email.ilike.%${needle}%`);
+
+  const { data, count, error } = await query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, to);
+  if (error) throw toAppError(error);
+
+  return {
+    rows: (data ?? []).map((row) => {
+      const record = row as unknown as Record<string, unknown> & ProfileRow;
+      return { ...record, role: roleFromEmbedded(record) };
+    }),
+    total: count ?? 0,
+  };
+}
+
+export async function listAllCoursesPage(params: {
+  page: number;
+  pageSize: number;
+  q: string;
+  archived?: 'all' | 'active' | 'archived';
+}): Promise<PageResult<AdminCoursePageRow>> {
+  const { from, to } = pageRange(params.page, params.pageSize);
+  const needle = escapePostgrestSearch(params.q);
+  let query = supabase
+    .from('courses')
+    .select('*, owner:profiles!courses_owner_id_fkey(full_name, email)', { count: 'exact' });
+
+  if (params.archived === 'active') query = query.eq('archived', false);
+  if (params.archived === 'archived') query = query.eq('archived', true);
+  if (needle) {
+    query = query.or(
+      `course_code.ilike.%${needle}%,title.ilike.%${needle}%,section.ilike.%${needle}%,owner.full_name.ilike.%${needle}%`,
+    );
+  }
+
+  const { data, count, error } = await query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, to);
+  if (error) throw toAppError(error);
+  return { rows: (data ?? []) as unknown as AdminCoursePageRow[], total: count ?? 0 };
+}
+
+export async function listAllExamsPage(params: {
+  page: number;
+  pageSize: number;
+  q: string;
+  state?: 'all' | ExamRow['state'];
+}): Promise<PageResult<ExamRow>> {
+  const { from, to } = pageRange(params.page, params.pageSize);
+  const needle = escapePostgrestSearch(params.q);
+  let query = supabase.from('exams').select('*', { count: 'exact' });
+  if (params.state && params.state !== 'all') query = query.eq('state', params.state);
+  if (needle) query = query.or(`title.ilike.%${needle}%,state.ilike.%${needle}%`);
+  const { data, count, error } = await query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, to);
+  if (error) throw toAppError(error);
+  return { rows: data ?? [], total: count ?? 0 };
+}
+
+export async function listAllAttemptsPage(params: {
+  page: number;
+  pageSize: number;
+  q: string;
+  onlyFlagged: boolean;
+}): Promise<PageResult<AdminAttemptRow>> {
+  const { from, to } = pageRange(params.page, params.pageSize);
+  const needle = escapePostgrestSearch(params.q);
+  let query = supabase
+    .from('exam_attempts')
+    .select(
+      'id, exam_id, student_id, state, violation_count, submission_reason, earned_points, max_points, percentage, pass_threshold, started_at, submitted_at, student:profiles!exam_attempts_student_id_fkey(full_name, email)',
+      { count: 'exact' },
+    );
+  if (params.onlyFlagged) query = query.gt('violation_count', 0);
+  if (needle) {
+    query = query.or(
+      `student.full_name.ilike.%${needle}%,student.email.ilike.%${needle}%`,
+    );
+  }
+  const { data, count, error } = await query
+    .order('started_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, to);
+  if (error) throw toAppError(error);
+  return { rows: (data ?? []) as unknown as AdminAttemptRow[], total: count ?? 0 };
+}
+
+export async function listAuditLogsPage(params: {
+  page: number;
+  pageSize: number;
+  q: string;
+}): Promise<PageResult<AuditLogRow>> {
+  const { from, to } = pageRange(params.page, params.pageSize);
+  const needle = escapePostgrestSearch(params.q);
+  let query = supabase.from('audit_logs').select('*', { count: 'exact' });
+  if (needle) query = query.or(`action.ilike.%${needle}%,entity_type.ilike.%${needle}%`);
+  const { data, count, error } = await query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, to);
+  if (error) throw toAppError(error);
+  return { rows: data ?? [], total: count ?? 0 };
 }

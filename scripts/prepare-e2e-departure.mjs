@@ -122,6 +122,8 @@ async function main() {
     courseId,
     title: 'E2E Departure Exam',
     questionCount: 5,
+    questionRandomization: true,
+    optionRandomization: true,
     opensInMs: -60_000,
     closesInMs: 2 * 60 * 60 * 1000,
   });

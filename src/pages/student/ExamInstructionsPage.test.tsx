@@ -77,7 +77,7 @@ describe('ExamInstructionsPage availability', () => {
     renderPage();
 
     expect(await screen.findByText('This exam has not opened yet.')).toBeInTheDocument();
-    const start = screen.getByRole('button', { name: /enter fullscreen & start/i });
+    const start = screen.getByRole('button', { name: /start exam/i });
     await userEvent.click(screen.getByRole('checkbox'));
     expect(screen.getByText(/has not opened yet/i)).toBeInTheDocument();
     expect(start).toBeDisabled();
@@ -95,7 +95,7 @@ describe('ExamInstructionsPage availability', () => {
     vi.mocked(getStudentExam).mockResolvedValue(makeExam(-2 * HOUR, -HOUR) as never);
     renderPage();
     expect(await screen.findByText('This exam has closed.')).toBeInTheDocument();
-    const button = screen.getByRole('button', { name: /enter fullscreen & start/i });
+    const button = screen.getByRole('button', { name: /start exam/i });
     await userEvent.click(screen.getByRole('checkbox'));
     expect(button).toBeDisabled();
   });
@@ -103,7 +103,7 @@ describe('ExamInstructionsPage availability', () => {
   it('enables the start button once acknowledged for an open exam', async () => {
     vi.mocked(getStudentExam).mockResolvedValue(makeExam(-HOUR, HOUR) as never);
     renderPage();
-    const button = await screen.findByRole('button', { name: /enter fullscreen & start/i });
+    const button = await screen.findByRole('button', { name: /start exam/i });
     expect(button).toBeDisabled();
     await userEvent.click(screen.getByRole('checkbox'));
     expect(button).toBeEnabled();

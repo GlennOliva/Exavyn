@@ -13,9 +13,11 @@ export type ReviewReason =
   | 'never'
   | 'score_pending'
   | 'awaiting_close'
+  | 'awaiting_scheduled'
   | 'awaiting_attempts'
   | 'immediate'
   | 'after_close'
+  | 'scheduled'
   | 'after_attempts'
   | 'privileged';
 
@@ -30,6 +32,7 @@ export interface AttemptQuestion {
   points: number;
   options: AttemptOption[];
   saved_option_id: string | null;
+  revision?: number | null;
 }
 
 export interface AttemptPayload {
@@ -47,10 +50,11 @@ export interface AttemptPayload {
     instructions: string;
     duration_minutes: number;
     item_count: number;
-    result_release: 'immediate' | 'after_close';
+    result_release: 'immediate' | 'after_close' | 'scheduled';
     closes_at: string;
   };
   questions: AttemptQuestion[];
+  saved_revision?: number | null;
 }
 
 export interface StartAttemptResult {
@@ -91,6 +95,8 @@ export interface ViolationResult {
 }
 
 export interface ResultData {
+  exam_id?: string;
+  attempt_id?: string;
   attempt_state: AttemptState;
   attempt_no?: number;
   max_attempts?: number;
@@ -102,6 +108,7 @@ export interface ResultData {
   violation_count: number;
   max_points?: number;
   result_release?: ResultReleasePolicy;
+  result_release_at?: string | null;
   released?: boolean;
   earned_points?: number | null;
   percentage?: number | null;
@@ -113,6 +120,7 @@ export interface ResultData {
   review_policy?: AnswerReviewPolicy;
   review_released?: boolean;
   review_reason?: ReviewReason;
+  review_release_at?: string | null;
   deadline_at?: string;
 }
 
@@ -153,6 +161,13 @@ export interface MyExamAttempts {
     pass_threshold: number | null;
     passed: boolean | null;
   } | null;
+}
+
+export interface MyResultsPage {
+  rows: MyResultRow[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export interface MyResultRow {
@@ -214,5 +229,6 @@ export interface AttemptReview {
   review_policy: AnswerReviewPolicy;
   review_released: boolean;
   review_reason: ReviewReason;
+  review_release_at?: string | null;
   questions: AttemptReviewQuestion[];
 }

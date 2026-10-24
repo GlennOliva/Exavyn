@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../lib/useAsync';
-import { createCourse, listTeacherCourses } from '../../features/courses/api';
+import { createCourse, listTeacherCoursesPage } from '../../features/courses/api';
 import {
   Alert,
   Button,
@@ -13,11 +13,26 @@ import {
   TextArea,
 } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
+import { useClampPage, usePageState } from '../../lib/pagination';
+import { Pagination } from '../../components/Pagination';
 
 export function TeacherCoursesPage() {
-  const { data, loading, error, reload } = useAsync(() => listTeacherCourses(), []);
+  const table = usePageState();
+  const archived = (table.getFilter('archived') || 'all') as 'all' | 'active' | 'archived';
+  const { data, loading, error, reload } = useAsync(
+    () =>
+      listTeacherCoursesPage({
+        page: table.page,
+        pageSize: table.pageSize,
+        q: table.q,
+        archived,
+      }),
+    [table.page, table.pageSize, table.q, archived],
+  );
+  useClampPage(table.page, table.pageSize, data?.total ?? 0, table.setPage);
   const [showCreate, setShowCreate] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const courses = data?.rows ?? [];
 
   return (
     <div className="stack">
@@ -31,7 +46,28 @@ export function TeacherCoursesPage() {
       {loading ? <PageSpinner /> : null}
       {error ? <Alert tone="danger" role="alert">{error}</Alert> : null}
 
-      {data && data.length > 0 ? (
+      <div className="row">
+        <TextInput
+          type="search"
+          aria-label="Search courses"
+          placeholder="Search by code, title, section, or term…"
+          value={table.q}
+          onChange={(e) => table.setQuery(e.target.value)}
+        />
+        <select
+          aria-label="Filter by archive state"
+          value={archived}
+          onChange={(e) =>
+            table.setFilter('archived', e.target.value === 'all' ? '' : e.target.value)
+          }
+        >
+          <option value="all">All courses</option>
+          <option value="active">Active</option>
+          <option value="archived">Archived</option>
+        </select>
+      </div>
+
+      {data ? (
         <div className="table-wrap">
           <table>
             <thead>
@@ -45,7 +81,7 @@ export function TeacherCoursesPage() {
               </tr>
             </thead>
             <tbody>
-              {data.map((course) => (
+              {courses.map((course) => (
                 <tr key={course.id}>
                   <td className="mono">{course.course_code}</td>
                   <td>{course.title}</td>
@@ -63,7 +99,18 @@ export function TeacherCoursesPage() {
               ))}
             </tbody>
           </table>
+          {courses.length === 0 ? <p className="muted center mt-2">No courses match the current filters.</p> : null}
         </div>
+      ) : null}
+      {data ? (
+        <Pagination
+          label="courses"
+          page={table.page}
+          pageSize={table.pageSize}
+          total={data.total}
+          onPageChange={table.setPage}
+          onPageSizeChange={table.setPageSize}
+        />
       ) : null}
 
       {showCreate ? (

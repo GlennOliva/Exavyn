@@ -327,6 +327,60 @@ async function main() {
     assertEquals(data.accepted, false, 'older revision rejected');
     assertEquals(data.reason, 'stale', 'reason stale');
   });
+  await runner.check('changing an answer persists the latest stable option id', async () => {
+    const q = answerable[0];
+    const wrong = q.options.find((option) => option.id !== keyMap[q.id]).id;
+    await studentUC.rpc('save_answer', {
+      p_attempt_id: attemptId, p_question_id: q.id, p_option_id: wrong,
+      p_revision: 3, p_request_id: uuid(), p_controller_token: token,
+    });
+    await studentUC.rpc('save_answer', {
+      p_attempt_id: attemptId, p_question_id: q.id, p_option_id: keyMap[q.id],
+      p_revision: 4, p_request_id: uuid(), p_controller_token: token,
+    });
+    const { data } = await service.from('attempt_answers').select('selected_option_id,revision').eq('attempt_id', attemptId).eq('question_id', q.id).single();
+    assertEquals(data.selected_option_id, keyMap[q.id], 'latest option persisted');
+    assertEquals(Number(data.revision), 4, 'latest revision persisted');
+  });
+  await runner.check('out-of-order answer responses cannot replace the newest choice', async () => {
+    const q = answerable[1];
+    const wrong = q.options.find((option) => option.id !== keyMap[q.id]).id;
+    await Promise.all([
+      studentUC.rpc('save_answer', { p_attempt_id: attemptId, p_question_id: q.id, p_option_id: wrong, p_revision: 6, p_request_id: uuid(), p_controller_token: token }),
+      studentUC.rpc('save_answer', { p_attempt_id: attemptId, p_question_id: q.id, p_option_id: keyMap[q.id], p_revision: 8, p_request_id: uuid(), p_controller_token: token }),
+      studentUC.rpc('save_answer', { p_attempt_id: attemptId, p_question_id: q.id, p_option_id: wrong, p_revision: 7, p_request_id: uuid(), p_controller_token: token }),
+    ]);
+    const { data } = await service.from('attempt_answers').select('selected_option_id,revision').eq('attempt_id', attemptId).eq('question_id', q.id).single();
+    assertEquals(data.selected_option_id, keyMap[q.id], 'revision 8 option retained');
+    assertEquals(Number(data.revision), 8, 'highest revision retained');
+  });
+  await runner.check('cleared answer remains unanswered after payload reload', async () => {
+    const q = payload.questions[30];
+    await studentUC.rpc('save_answer', { p_attempt_id: attemptId, p_question_id: q.id, p_option_id: q.options[0].id, p_revision: 1, p_request_id: uuid(), p_controller_token: token });
+    await studentUC.rpc('save_answer', { p_attempt_id: attemptId, p_question_id: q.id, p_option_id: null, p_revision: 2, p_request_id: uuid(), p_controller_token: token });
+    const { data, error } = await studentUC.rpc('get_attempt_payload', { p_attempt_id: attemptId });
+    assertNoError(error, 'payload after clear');
+    const reloaded = data.questions.find((question) => question.id === q.id);
+    assertEquals(reloaded.saved_option_id, null, 'clear persisted');
+    assertEquals(Number(reloaded.revision), 2, 'clear revision persisted');
+  });
+  await runner.check('bookmarks persist per attempt without affecting answers', async () => {
+    const q = payload.questions[4];
+    const marked = await studentUC.rpc('toggle_bookmark', {
+      p_attempt_id: attemptId, p_question_id: q.id, p_controller_token: token,
+    });
+    assertNoError(marked.error, 'mark bookmark');
+    assertEquals(marked.data.bookmarked, true, 'marked');
+    const loaded = await studentUC.rpc('get_bookmarks', {
+      p_attempt_id: attemptId, p_controller_token: token,
+    });
+    assertNoError(loaded.error, 'load bookmarks');
+    assert(loaded.data.bookmarks.includes(q.id), 'bookmark persisted');
+    const unmarked = await studentUC.rpc('toggle_bookmark', {
+      p_attempt_id: attemptId, p_question_id: q.id, p_controller_token: token,
+    });
+    assertEquals(unmarked.data.bookmarked, false, 'unmarked');
+  });
   await runner.check('foreign controller token is rejected', async () => {
     const q = answerable[2];
     const { data } = await studentUC.rpc('save_answer', {
@@ -406,6 +460,14 @@ async function main() {
     assertEquals(Number(data.max_points), 50, 'max 50');
     assertEquals(Number(data.percentage), 60, 'percentage 60');
     assertEquals(data.released, true, 'immediate release');
+  });
+  await runner.check('answer review matches the exact option used for grading', async () => {
+    const { data, error } = await studentUC.rpc('get_attempt_review', { p_attempt_id: attemptId });
+    assertNoError(error, 'get_attempt_review mapping');
+    const reviewed = data.questions.find((question) => question.id === answerable[0].id);
+    assertEquals(reviewed.selected_option_id, keyMap[answerable[0].id], 'reviewed selection');
+    assertEquals(reviewed.correct_option_id, keyMap[answerable[0].id], 'graded key');
+    assertEquals(reviewed.is_correct, true, 'review grading');
   });
   await runner.check('answers cannot be changed after finalize', async () => {
     const { data } = await studentUC.rpc('save_answer', {
@@ -498,6 +560,44 @@ async function main() {
     assertEquals(result.released, false, 'score withheld before close');
     assertEquals(result.earned_points, null, 'earned hidden');
     assertEquals(result.percentage, null, 'percentage hidden');
+  });
+  await runner.check('scheduled score and answer release boundaries are server-enforced', async () => {
+    const resultAt = new Date(Date.now() + 1800).toISOString();
+    const answerAt = new Date(Date.now() + 3200).toISOString();
+    const scheduled = buildExamPayload({
+      courseId,
+      title: 'Scheduled Release Exam',
+      questionCount: 5,
+      resultRelease: 'scheduled',
+      resultReleaseAt: resultAt,
+      answerReview: 'scheduled',
+      answerReleaseAt: answerAt,
+    });
+    const saved = await teacherAC.rpc('save_exam_draft', { p_exam_id: null, p_payload: scheduled });
+    assertNoError(saved.error, 'save scheduled exam');
+    fixture.exams.scheduled = saved.data;
+    const published = await teacherAC.rpc('publish_exam', { p_exam_id: saved.data });
+    assertNoError(published.error, 'publish scheduled exam');
+    const started = await studentPC.rpc('start_attempt', { p_exam_id: saved.data });
+    assertNoError(started.error, 'start scheduled exam');
+    const submitted = await studentPC.rpc('submit_attempt', {
+      p_attempt_id: started.data.attempt_id,
+      p_controller_token: started.data.controller_token,
+    });
+    assertNoError(submitted.error, 'submit scheduled exam');
+    assertEquals(submitted.data.released, false, 'score hidden before schedule');
+    const direct = await studentPC.from('exam_attempts').select('id,percentage').eq('id', started.data.attempt_id);
+    assertNoError(direct.error, 'direct scheduled attempt query');
+    assertEquals(direct.data.length, 0, 'direct row hidden before release');
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const score = await studentPC.rpc('get_result', { p_attempt_id: started.data.attempt_id });
+    assertNoError(score.error, 'scheduled result after release');
+    assertEquals(score.data.released, true, 'score released at schedule');
+    assertEquals(score.data.review_released, false, 'answers remain hidden until answer schedule');
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const review = await studentPC.rpc('get_attempt_review', { p_attempt_id: started.data.attempt_id });
+    assertNoError(review.error, 'scheduled review after release');
+    assertEquals(review.data.review_released, true, 'answers released at schedule');
   });
   await runner.check('passed server deadline forces time_expired over manual', async () => {
     const payload = buildExamPayload({ courseId, title: 'Deadline Exam', questionCount: 3 });
@@ -652,7 +752,7 @@ async function main() {
   await runner.check('a third start is blocked once attempts are exhausted', async () => {
     const { error } = await studentUC.rpc('start_attempt', { p_exam_id: examId });
     assert(error, 'third attempt blocked');
-    assert(/\b2 attempts\b/i.test(error.message), 'attempt-limit message');
+    assert(/(?:\b2 attempts\b|no attempts remaining)/i.test(error.message), 'attempt-limit message');
   });
   await runner.check('highest-score policy reports the best attempt', async () => {
     const { data, error } = await studentUC.rpc('get_my_exam_attempts', { p_exam_id: examId });
@@ -678,6 +778,57 @@ async function main() {
     assert(afterClose, 'after_close attempt present');
     assertEquals(afterClose.released, false, 'after_close withheld');
     assertEquals(afterClose.earned_points, null, 'after_close score hidden');
+  });
+  await runner.check('unreleased score columns are inaccessible by direct table API', async () => {
+    const { data, error } = await studentPC
+      .from('exam_attempts')
+      .select('id,earned_points,percentage,correct_count')
+      .eq('exam_id', fixture.exams.afterClose);
+    assertNoError(error, 'direct unreleased attempt query');
+    assertEquals(data.length, 0, 'unreleased attempt row hidden');
+  });
+  await runner.check('get_my_results_page paginates and searches server-side', async () => {
+    const { data: firstPage, error: firstErr } = await studentUC.rpc('get_my_results_page', {
+      p_search: 'Workflow Exam',
+      p_page: 1,
+      p_page_size: 1,
+    });
+    assertNoError(firstErr, 'get_my_results_page page 1');
+    assertEquals(firstPage.page, 1, 'page echoed');
+    assertEquals(firstPage.page_size, 1, 'page size echoed');
+    assert(firstPage.total >= 2, 'both attempts counted');
+    assertEquals(firstPage.rows.length, 1, 'one row per page');
+
+    const { data: secondPage, error: secondErr } = await studentUC.rpc('get_my_results_page', {
+      p_search: 'Workflow Exam',
+      p_page: 2,
+      p_page_size: 1,
+    });
+    assertNoError(secondErr, 'get_my_results_page page 2');
+    assertEquals(secondPage.total, firstPage.total, 'stable total');
+    assertEquals(secondPage.rows.length, 1, 'second row');
+    assert(secondPage.rows[0].id !== firstPage.rows[0].id, 'pages do not overlap');
+
+    const { data: empty, error: emptyErr } = await studentUC.rpc('get_my_results_page', {
+      p_search: 'no-such-exam-title',
+      p_page: 1,
+      p_page_size: 10,
+    });
+    assertNoError(emptyErr, 'get_my_results_page empty search');
+    assertEquals(empty.total, 0, 'no matches');
+    assertEquals(empty.rows.length, 0, 'no rows');
+
+    const { data: pPage, error: pPageErr } = await studentPC.rpc('get_my_results_page', {
+      p_search: 'After-close',
+      p_page: 1,
+      p_page_size: 10,
+    });
+    assertNoError(pPageErr, 'get_my_results_page student-p');
+    const withheld = (pPage.rows ?? []).find((r) => r.exam_id === fixture.exams.afterClose);
+    if (withheld) {
+      assertEquals(withheld.released, false, 'page withholds after_close');
+      assertEquals(withheld.earned_points, null, 'page hides after_close score');
+    }
   });
   await runner.check('duplicating a published exam yields a fresh draft', async () => {
     const { data: dupId, error } = await teacherAC.rpc('duplicate_exam', { p_exam_id: examId });

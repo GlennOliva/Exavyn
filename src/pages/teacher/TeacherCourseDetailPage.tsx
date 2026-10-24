@@ -6,7 +6,7 @@ import {
   deleteCourse,
   getCourse,
   getJoinCode,
-  listCourseEnrollments,
+  listCourseEnrollmentsPage,
   rotateJoinCode,
   setCourseArchived,
   updateCourse,
@@ -15,7 +15,7 @@ import {
   archiveExam,
   deleteExam,
   duplicateExam,
-  listExamsForCourse,
+  listExamsForCoursePage,
   publishExam,
   restoreExam,
 } from '../../features/exams/api';
@@ -33,6 +33,9 @@ import {
 } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
 import { formatDateTime } from '../../lib/format';
+import { useClampPage, usePageState } from '../../lib/pagination';
+import { Pagination } from '../../components/Pagination';
+import type { EnrollmentRow } from '../../lib/database.types';
 import type { CourseRow } from '../../lib/database.types';
 
 export function TeacherCourseDetailPage() {
@@ -44,9 +47,42 @@ export function TeacherCourseDetailPage() {
   const [joinCode, setJoinCode] = useState<string | null>(null);
   const [joinCodeInfo, setJoinCodeInfo] = useState<string | null>(null);
 
+  const enrollmentsTable = usePageState('enrollments_');
+  const examsTable = usePageState('exams_');
+  const enrollmentStatus = (enrollmentsTable.getFilter('status') || 'all') as
+    | 'all'
+    | EnrollmentRow['status'];
+  const examState = (examsTable.getFilter('state') || 'all') as
+    | 'all'
+    | 'draft'
+    | 'published'
+    | 'archived';
+
   const course = useAsync(() => getCourse(courseId), [courseId]);
-  const enrollments = useAsync(() => listCourseEnrollments(courseId), [courseId]);
-  const exams = useAsync(() => listExamsForCourse(courseId), [courseId]);
+  const enrollments = useAsync(
+    () =>
+      listCourseEnrollmentsPage(courseId, {
+        page: enrollmentsTable.page,
+        pageSize: enrollmentsTable.pageSize,
+        q: enrollmentsTable.q,
+        status: enrollmentStatus,
+      }),
+    [courseId, enrollmentsTable.page, enrollmentsTable.pageSize, enrollmentsTable.q, enrollmentStatus],
+  );
+  const exams = useAsync(
+    () =>
+      listExamsForCoursePage(courseId, {
+        page: examsTable.page,
+        pageSize: examsTable.pageSize,
+        q: examsTable.q,
+        state: examState,
+      }),
+    [courseId, examsTable.page, examsTable.pageSize, examsTable.q, examState],
+  );
+  useClampPage(enrollmentsTable.page, enrollmentsTable.pageSize, enrollments.data?.total ?? 0, enrollmentsTable.setPage);
+  useClampPage(examsTable.page, examsTable.pageSize, exams.data?.total ?? 0, examsTable.setPage);
+  const enrollmentRows = enrollments.data?.rows ?? [];
+  const examRows = exams.data?.rows ?? [];
 
   const run = async (fn: () => Promise<unknown>, message: string) => {
     setActionError(null);
@@ -164,17 +200,39 @@ export function TeacherCourseDetailPage() {
         <div className="row-between">
           <h2>Enrollments</h2>
           {enrollments.data ? (
-            <span className="muted small">{enrollments.data.length} record(s)</span>
+            <span className="muted small">{enrollments.data.total} record(s)</span>
           ) : null}
+        </div>
+        <div className="row">
+          <TextInput
+            type="search"
+            aria-label="Search enrollments"
+            placeholder="Search students by name or email…"
+            value={enrollmentsTable.q}
+            onChange={(e) => enrollmentsTable.setQuery(e.target.value)}
+          />
+          <select
+            aria-label="Filter enrollment status"
+            value={enrollmentStatus}
+            onChange={(e) =>
+              enrollmentsTable.setFilter('status', e.target.value === 'all' ? '' : e.target.value)
+            }
+          >
+            <option value="all">All statuses</option>
+            <option value="pending">pending</option>
+            <option value="approved">approved</option>
+            <option value="rejected">rejected</option>
+            <option value="withdrawn">withdrawn</option>
+          </select>
         </div>
         {enrollments.loading ? <PageSpinner /> : null}
         {enrollments.error ? <Alert tone="danger">{enrollments.error}</Alert> : null}
-        {enrollments.data && enrollments.data.length === 0 ? (
-          <EmptyState title="No enrollment requests yet">
+        {enrollments.data && enrollmentRows.length === 0 ? (
+          <EmptyState title="No enrollment requests match">
             <p className="muted">Share the join code with your students.</p>
           </EmptyState>
         ) : null}
-        {enrollments.data && enrollments.data.length > 0 ? (
+        {enrollmentRows.length > 0 ? (
           <div className="table-wrap">
             <table>
               <thead>
@@ -186,7 +244,7 @@ export function TeacherCourseDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {enrollments.data.map((enr) => (
+                {enrollmentRows.map((enr) => (
                   <tr key={enr.id}>
                     <td>
                       {enr.student?.full_name || '—'}
@@ -246,6 +304,16 @@ export function TeacherCourseDetailPage() {
             </table>
           </div>
         ) : null}
+        {enrollments.data ? (
+          <Pagination
+            label="enrollments"
+            page={enrollmentsTable.page}
+            pageSize={enrollmentsTable.pageSize}
+            total={enrollments.data.total}
+            onPageChange={enrollmentsTable.setPage}
+            onPageSizeChange={enrollmentsTable.setPageSize}
+          />
+        ) : null}
       </Card>
 
       <Card>
@@ -255,14 +323,35 @@ export function TeacherCourseDetailPage() {
             New exam
           </Link>
         </div>
+        <div className="row">
+          <TextInput
+            type="search"
+            aria-label="Search examinations"
+            placeholder="Search by title…"
+            value={examsTable.q}
+            onChange={(e) => examsTable.setQuery(e.target.value)}
+          />
+          <select
+            aria-label="Filter exam state"
+            value={examState}
+            onChange={(e) =>
+              examsTable.setFilter('state', e.target.value === 'all' ? '' : e.target.value)
+            }
+          >
+            <option value="all">All states</option>
+            <option value="draft">draft</option>
+            <option value="published">published</option>
+            <option value="archived">archived</option>
+          </select>
+        </div>
         {exams.loading ? <PageSpinner /> : null}
         {exams.error ? <Alert tone="danger">{exams.error}</Alert> : null}
-        {exams.data && exams.data.length === 0 ? (
-          <EmptyState title="No exams yet">
+        {exams.data && examRows.length === 0 ? (
+          <EmptyState title="No exams match">
             <p className="muted">Create a draft, add questions, then publish it.</p>
           </EmptyState>
         ) : null}
-        {exams.data && exams.data.length > 0 ? (
+        {examRows.length > 0 ? (
           <div className="table-wrap">
             <table>
               <thead>
@@ -276,7 +365,7 @@ export function TeacherCourseDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {exams.data.map((exam) => (
+                {examRows.map((exam) => (
                   <tr key={exam.id}>
                     <td>{exam.title}</td>
                     <td>
@@ -399,6 +488,16 @@ export function TeacherCourseDetailPage() {
               </tbody>
             </table>
           </div>
+        ) : null}
+        {exams.data ? (
+          <Pagination
+            label="examinations"
+            page={examsTable.page}
+            pageSize={examsTable.pageSize}
+            total={exams.data.total}
+            onPageChange={examsTable.setPage}
+            onPageSizeChange={examsTable.setPageSize}
+          />
         ) : null}
       </Card>
 

@@ -7,20 +7,21 @@ steps here prove the database-enforced security model, the authenticated exam
 workflow, and the concurrency/finality guarantees.
 
 > Status: **executed** against the dedicated hosted test project
-> `tddmtdhhckykwnoydvjc` (never production). Re-verified live on 2026-10-15:
-> RLS **36/36**, workflow **57/57**, concurrency **5/5**, finality **10/10**
-> (service role used for fixture setup only), public/local e2e **26 passed /
-> 10 skipped**, unit **96/96**, authenticated e2e (isolated fixture, Chromium
-> headed) **3/3** plus themed-authenticated **2/2**. Migrations `0009` (teacher
-> features) and `0010` (answer review + pass threshold) were applied to the
-> hosted project via `npx supabase db push` and `npx supabase migration list`
-> was re-verified once DB egress was available. Email confirmation was then
+> `tddmtdhhckykwnoydvjc`. Re-verified live on 2026-10-24:
+> RLS **36/36**, workflow **65/65**, concurrency **5/5**, finality **10/10**,
+> feedback **6/6** (hosted total **122/122**), unit **118/118**, browser
+> **33 passed / 9 skipped / 0 failed**, plus the dedicated answer-integrity
+> scenario **1/1 passed locally and 1/1 passed against production**, and
+> typecheck/lint/build clean. The corrected frontend is deployed at
+> `https://exavyn.vercel.app` (production asset `index-CCj1TNHp.js`).
+> Forward migrations `0013`-`0024` are applied and recorded. Email confirmation was then
 > **disabled** on the hosted project (scoped `config push`), so public sign-up
 > returns a live session and is not gated by the email sender; a fresh anon-key
 > signup was verified live and the probe account deleted. See §10 for counts and
 > the bugs found and fixed. OS-level app switches (Command+Tab / Alt+Tab) are
 > covered by a **manual checklist** (§5) and are **UNVERIFIED** until run on that
-> OS.
+> OS. Real iPhone/iPad hardware verification is also **UNVERIFIED**; runtime
+> capability tests and browser fallback checks do not establish real-device support.
 
 ---
 
@@ -32,7 +33,8 @@ workflow, and the concurrency/finality guarantees.
 2. **Never put server secrets in the browser.** Only `VITE_*` values reach the
    frontend bundle. The service-role key, bootstrap token, and seed password are
    server-only.
-3. **Never deploy the frontend to production** as part of verification.
+3. **Never deploy the frontend to production** as part of routine verification;
+   production promotion requires a separate explicit release request.
 4. **Never print secrets.** The harness refuses to echo keys; keep it that way.
 5. A run that cannot find credentials exits with code **2 (BLOCKED)**, not 1
    (FAILED). Blocked ≠ passed.
@@ -125,7 +127,7 @@ Requires Docker Desktop or Podman on `PATH`.
 
 ```bash
 npx supabase@latest start            # boots Postgres, Auth, Studio, Storage
-npx supabase@latest db reset         # applies all migrations 0000-0010 (seed disabled)
+npx supabase@latest db reset         # applies all migrations 0000-0012 (seed disabled)
 npx supabase@latest status -o env    # prints local URL + keys (do not paste into chat)
 ```
 
@@ -408,6 +410,10 @@ these are documented rather than automated:
 | 32 | `get_attempt_review` is owner-only (student must be approved-enrolled; owner teacher/admin only) and returns no key material while withheld | `rls`, `workflow` |
 | 33 | Pass threshold marks attempts `passed`/`failed` on `get_result` and `get_my_results` | schema (`0010`), `workflow` |
 | 34 | Attempts snapshotted before `0010` default to `never` (keys never retroactively exposed) | schema (`0010`) |
+| 35 | Student result history paginates and searches server-side, with a stable total and no unreleased-score leak | schema (`0011`/`0012`), `workflow`: "get_my_results_page paginates and searches server-side" |
+| 36 | Every authorized data table uses URL-backed 10/25/50 pagination; filters/search apply before the slice | `Pagination.tsx`, `usePageState`, page wiring, `npm run typecheck` |
+| 37 | Score badges use the unrounded authoritative percentage: green at/above threshold, yellow within 10 points below, red further below; missing/unreleased states neutral | `score.test.ts`, `ScoreBadge` usage, `workflow` pass-threshold checks |
+| 38 | Devices without usable fullscreen can start/answer/submit in an accessible fallback; fullscreen absence is never a violation or recovery blocker | `fullscreen.test.ts`, `useExamMonitor.test.tsx`, `ExamInstructionsPage.test.tsx` |
 
 ### Teacher features (migration `0009`)
 
@@ -425,13 +431,11 @@ forward-only; it does not rewrite `0000`–`0008`.
 | Student UI | Instructions show `used/max`, remaining attempts, and the multi-attempt policy; start button blocked when exhausted; history is release-guarded | `ExamInstructionsPage.test.tsx`, `workflow` (`get_my_results`) |
 | Client types | `get_my_exam_attempts` / `get_my_results` typed (`MyExamAttempts`, `MyResultRow`); student history no longer reads `exam_attempts` directly | `npm run typecheck` |
 
-**Documented API gap.** The student history now uses the release-guarded
-`get_my_results` RPC, but `exam_attempts` still permits a student to `SELECT`
-their own row directly (GRANT + RLS), which exposes raw `earned_points` before an
-`after_close` release. Column-level grants cannot separate student from teacher
-(both use the `authenticated` role), so closing this fully requires a view or a
-policy split; the student UI does not request those columns. Treat direct
-PostgREST reads of `exam_attempts` as out of the supported client surface.
+**Direct API release gate.** Migration `0022` hides active and unreleased
+`exam_attempts` rows from student PostgREST reads. Authorized student result
+access goes through release-gated RPCs; owner teachers and admins retain report
+access. The hosted workflow verifies that direct score-column reads return no row
+before `after_close` and scheduled release.
 
 ### Answer review + pass threshold (migration `0010`)
 
@@ -454,6 +458,33 @@ exposed; new exams default to `immediate`.
 | Settings | `update_exam_settings` gained `p_answer_review` / `p_pass_threshold`; archived exams reject edits | schema (`0010`), `workflow` |
 | Student UI | Result page shows pass/fail, attempt/remaining/time-spent, and a review link (or the withheld reason); per-question review page renders outcomes in shown order with explanations | `ResultPage.tsx`, `AttemptReviewPage.tsx`, `npm run typecheck` |
 | Client cache | Local resume/controller keys are cleared on sign-out and on account switch | `src/features/attempts/storage.ts` (`clearAttemptStorage`), `AuthContext` |
+
+### Paginated results, score status, and fullscreen fallback (`0011`/`0012`)
+
+Migration `2026010100011_result_pagination.sql` adds the release-guarded
+`get_my_results_page(p_search, p_page, p_page_size)` RPC; `0012` fixes its
+single-statement CTE scope after the first hosted run caught it. Limits are
+clamped to 1–50, search is applied before the page slice, and ordering is
+`started_at desc, id desc` for a stable unique tie-breaker. Score values and
+`passed` are computed only when the existing release rule allows them.
+
+The UI now paginates every authorized data list (admin users/courses/exams/
+reports/audit; teacher courses/enrollments/exams/results/violations; student
+courses/exams/history) with `10/25/50`, URL-preserved state, and filters/search
+before the page slice. Exam question navigation is intentionally not paginated.
+
+Fullscreen is now capability-based, not device-name-based. A rejected or
+unsupported request enters a focused viewport fallback; it is never counted as
+a violation and never blocks recovery. Real iPhone/iPad Safari verification
+remains **UNVERIFIED** until run on physical hardware.
+
+| Layer | Behavior | Verified by |
+| --- | --- | --- |
+| Result pagination | Server-side search + page/page-size, stable total/order, release guard preserved | `workflow`: "get_my_results_page paginates and searches server-side" |
+| Shared pagination | Same controls everywhere, default 10, 10/25/50, URL state, page clamped after shrink | `pagination.test.ts`, page wiring, `typecheck`/`lint` |
+| Score status | Unrounded threshold boundary; 10-point yellow band below passing; no-threshold/pending/unreleased neutral | `score.test.ts`; badges in result/history/dashboard/teacher/admin views |
+| Fullscreen fallback | Capability detection, request from gesture, honest fallback message/labels, no fullscreen violation in fallback, recovery needs visible + focused only | `fullscreen.test.ts`, `useExamMonitor.test.tsx`, `ExamInstructionsPage.test.tsx` |
+| iOS layout | `viewport-fit=cover`, `100dvh`, safe-area padding, 44px mobile pagination targets | CSS review; **device check UNVERIFIED** |
 
 ### Exam window availability (`opens_at` / `closes_at`)
 
@@ -552,13 +583,13 @@ Immutable leftovers:         <count from manifest>
 
 ## 10. Verification results (this workspace)
 
-Re-verified live on **2026-10-15** against `tddmtdhhckykwnoydvjc` with the full
+Re-verified live on **2026-10-24** against `tddmtdhhckykwnoydvjc` with the full
 server environment present (`.env.server.local`).
 
 ```
 Environment: hosted test project tddmtdhhckykwnoydvjc   Node 24.14.0
-Local checks (offline):  typecheck PASS, lint PASS, unit 96/96, build PASS,
-                         e2e 26/26 passed / 10 skipped
+Local checks (offline):  typecheck PASS, lint PASS, unit 118/118, build PASS,
+                         e2e 33 passed / 9 skipped / 0 failed
                          (Chromium + Firefox; public + registration + branding/
                          theme run always, authenticated/admin specs skip unless
                          E2E_* creds)
@@ -573,7 +604,7 @@ Hosted checks (this session): `npm run test:hosted` exit 0
                                          insert/update, no admin_set_role),
                                          and cross-student record isolation
                                          (profile / role / attempts))
-  workflow               57/57   PASS   (service role for fixture setup only;
+  workflow               65/65   PASS   (service role for fixture setup only;
                                          provisioning, isolation, enrollment,
                                          publish, controller, grading, dedup,
                                          warning->finalize, immutability,
@@ -589,7 +620,11 @@ Hosted checks (this session): `npm run test:hosted` exit 0
                                          answer review: immediate per-question
                                          detail, owner-teacher access, peer
                                          denial, never/after_close/after_attempts
-                                         gating, and pass-threshold pass/fail)
+                                         gating, pass-threshold pass/fail, and
+                                          server-side paginated result history,
+                                          stable answer change/clear/review,
+                                          bookmarks, scheduled release + direct
+                                          API withholding)
   concurrency             5/5    PASS   (racing submit/violation/save, 10x
                                          episode storm, lease rotation +
                                          recovery, clock independence, bulk
@@ -597,7 +632,9 @@ Hosted checks (this session): `npm run test:hosted` exit 0
   finality               10/10   PASS   (idempotent + simultaneous re-submit,
                                          no user-facing rewrite/delete of final
                                          fields, post-finalize answer/violation
-                                         no-ops, deadline precedence)
+                                          no-ops, deadline precedence)
+  feedback                6/6    PASS   (deduplication, own history, owner-
+                                          teacher/admin scope, private notes)
 
 Authenticated UI e2e (isolated fixture; Chromium, headed):
   3/3                     PASS   dedicated teacher + student + fresh exam,
@@ -656,15 +693,15 @@ Preceding this session (user tokens only):
                                  role admin, profile active; /admin route 2/2
   CLI / secrets           PASS   (`secrets list` names, digests only)
 
-BLOCKED (environment network, not credentials):
-  migration history diff  BLOCKED  Postgres ports 5432/6543 are unreachable
-                                   from this host (egress-blocked). The CLI
-                                   account IS authenticated (Management API
-                                   works) and SUPABASE_DB_PASSWORD is present,
-                                   but there is no TCP path; the Management API
-                                   SQL endpoint needs a personal token that only
-                                   prompts interactively, and PostgREST cannot
-                                   expose supabase_migrations. Unverified.
+Migrations:
+  migration history       PASS    forward migrations through 2026010100024
+                                  applied without reset and recorded in
+                                  supabase_migrations.schema_migrations.
+
+Device checks:
+  real iPhone/iPad Safari UNVERIFIED  fallback is unit-tested and uses
+                                     viewport-fit/dvh/safe-area CSS, but no
+                                     physical iOS hardware was available.
 
 Skipped (NOT counted as passed):
   default e2e authenticated spec          6 skipped  (gated on E2E_* creds)
@@ -731,15 +768,59 @@ Immutable leftovers:     expected (published versions / finalized attempts /
 - `supabase/tests/lib/harness.mjs`: `buildExamPayload` now accepts
   `answerReview`, `passThreshold`, and `maxAttempts` so suites can author policy
   variants.
-- `supabase/tests/workflow.test.mjs`: added answer-review and pass-threshold
-  checks (57/57). The attempt-limit assertion was relaxed to match the wording
-  now emitted by `start_attempt` (`You have used all N attempts for this exam`).
+- `supabase/tests/workflow.test.mjs`: now verifies stable option IDs, change,
+  out-of-order writes, explicit clear/reload, bookmarks, exact graded review,
+  scheduled release, and direct-API withholding (65/65).
 - `supabase/tests/rls.test.mjs`: added `get_attempt_review` authorization checks
   for a non-owner student and a non-owner teacher, plus the signup-hardening
   checks (role-escalation denial + cross-student isolation); the suite is now
   **36/36**.
 
 ### Bug found and fixed
+
+The answer-change defect was caused by reusing one `request_id` per question in
+`ExamPage`. `save_answer` correctly treated that as an idempotent retry and
+returned the first accepted selection, so later choices could appear to revert.
+The client now creates a fresh request UUID for every logical change, advances a
+per-question revision initialized from the hosted row, ignores stale responses,
+and waits for the latest save before navigation/submission. Hosted checks prove
+change, rapid out-of-order updates, clear/reload, final grading, and review
+mapping. Finalization was also corrected to count only non-null selections; no
+historical finalized score was rewritten.
+
+A separate shuffled-review defect used the authored `question.position` as the
+display number even though review rows were ordered by the persisted shuffled
+`question_order`. The review page now numbers the returned persisted order, so
+the number, prompt, saved option UUID, grading key, and explanation remain
+aligned.
+
+Dedicated hosted browser proof (`answer-integrity.exam.spec.ts`, Chromium,
+isolated five-question shuffled fixture): **1/1 passed**. It selects B on the
+first displayed question, waits for Next, answers question 2, returns only with
+Previous, verifies B, changes to C, reloads, exercises out-of-order A → C → B,
+clears another answer, submits, compares database rows and computed grading, and
+verifies review shows C. It also asserts question/bookmark status markers cannot
+navigate and that both navigation buttons are disabled until save acknowledgement.
+
+The same scenario was rerun against the public production alias after promoting
+the verified Vercel preview: **1/1 passed**. The trace asserts distinct request
+UUIDs for B and C, revisions 1 and 2, accepted RPC responses, the final C option
+UUID in `attempt_answers`, the matching grading input, and the matching
+`get_attempt_review` payload. Production serves `index-CCj1TNHp.js`; the
+previous deployment served `index-DsrZm_K0.js` and still contained the original
+request-ID reuse and direct question-jump behavior.
+
+Read-only historical audit snapshot before the final verification fixtures:
+483 attempts and 6,043 answer rows overall. Excluding generated E2E exams, one
+submitted attempt had `answered_count=31` with 30 non-null selections across 31
+rows. It was not modified because finalized outcomes are immutable. The old
+client did not record rejected logical changes, so revision-1 rows cannot prove
+that a student changed an answer and cannot safely identify every affected
+attempt; no historical selection or score was inferred or rewritten.
+
+Migrations `0018`/`0019` restored omitted private order/finalization helpers;
+`0021` removed an obsolete `update_exam_settings` overload that made PostgREST
+resolution ambiguous. Hosted function-signature and lifecycle suites pass.
 
 The fullscreen exam page (`/student/exams/:examId/take`) blank-screened at
 runtime. Root cause: `ExamPage` calls `useBlocker` (SOP req 119 / acceptance 13

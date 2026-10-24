@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../features/auth/AuthContext';
 import { Alert, Button, Card, Field, TextInput } from '../components/ui';
 import { errorMessage } from '../lib/errors';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 export function ProfilePage() {
   const { user, refresh } = useAuth();
@@ -54,6 +55,16 @@ export function ProfilePage() {
             Save
           </Button>
         </form>
+      </Card>
+      <Card>
+        <h2>Settings</h2>
+        <h3>Appearance</h3>
+        <div className="row-between">
+          <div>
+            <p className="muted small">Theme preference</p>
+          </div>
+          <ThemeToggle />
+        </div>
       </Card>
     </div>
   );

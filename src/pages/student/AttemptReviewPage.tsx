@@ -4,6 +4,7 @@ import { getAttemptReview } from '../../features/attempts/api';
 import { Alert, Badge, Card, PageSpinner, StatusBadge } from '../../components/ui';
 import {
   formatDateTime,
+  formatDateTimeWithZone,
   percent,
   reviewUnavailableReasonText,
   submissionReasonLabel,
@@ -37,7 +38,9 @@ export function AttemptReviewPage() {
         </div>
         <Card>
           <Alert tone="warning" role="status">
-            {reviewUnavailableReasonText(data.review_reason)}
+            {data.review_reason === 'awaiting_scheduled' && data.review_release_at
+              ? `Correct answers will be visible at ${formatDateTimeWithZone(data.review_release_at)}.`
+              : reviewUnavailableReasonText(data.review_reason)}
           </Alert>
           <div className="row mt-2">
             <Link className="btn" to={`/student/attempts/${attemptId}/result`}>
@@ -86,10 +89,10 @@ export function AttemptReviewPage() {
         </p>
       </Card>
 
-      {data.questions.map((question) => (
+      {data.questions.map((question, index) => (
         <Card key={question.id}>
           <div className="row-between">
-            <strong>Question {question.position}</strong>
+            <strong>Question {index + 1}</strong>
             <Badge tone={question.is_correct ? 'success' : 'danger'}>
               {question.is_correct ? 'Correct' : 'Incorrect'}
             </Badge>

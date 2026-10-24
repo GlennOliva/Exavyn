@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAsync } from '../../lib/useAsync';
 import {
-  listUsers,
+  listUsersPage,
   provisionTeacher,
   setAccountStatus,
   setRole,
@@ -20,15 +20,27 @@ import {
 } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
 import { formatDateTime } from '../../lib/format';
+import { useClampPage, usePageState } from '../../lib/pagination';
+import { Pagination } from '../../components/Pagination';
 import type { AppRole } from '../../lib/database.types';
 
 export function AdminUsersPage() {
-  const { data, loading, error, reload } = useAsync(() => listUsers(), []);
+  const table = usePageState();
+  const roleFilter = (table.getFilter('role') || 'all') as 'all' | AppRole;
+  const { data, loading, error, reload } = useAsync(
+    () =>
+      listUsersPage({
+        page: table.page,
+        pageSize: table.pageSize,
+        q: table.q,
+        role: roleFilter,
+      }),
+    [table.page, table.pageSize, table.q, roleFilter],
+  );
+  useClampPage(table.page, table.pageSize, data?.total ?? 0, table.setPage);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showProvision, setShowProvision] = useState(false);
-  const [query, setQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | AppRole>('all');
 
   const run = async (fn: () => Promise<void>, message: string) => {
     setActionError(null);
@@ -50,15 +62,7 @@ export function AdminUsersPage() {
       `Account ${user.status === 'active' ? 'suspended' : 'reactivated'}.`,
     );
 
-  const needle = query.trim().toLowerCase();
-  const filteredUsers = (data ?? []).filter((user) => {
-    if (roleFilter !== 'all' && (user.role ?? 'student') !== roleFilter) return false;
-    if (!needle) return true;
-    return (
-      (user.full_name ?? '').toLowerCase().includes(needle) ||
-      (user.email ?? '').toLowerCase().includes(needle)
-    );
-  });
+  const users = data?.rows ?? [];
 
   return (
     <div className="stack">
@@ -79,13 +83,15 @@ export function AdminUsersPage() {
             type="search"
             aria-label="Search users"
             placeholder="Search by name or email…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={table.q}
+            onChange={(e) => table.setQuery(e.target.value)}
           />
           <select
             aria-label="Filter by role"
             value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value as 'all' | AppRole)}
+            onChange={(e) =>
+              table.setFilter('role', e.target.value === 'all' ? '' : e.target.value)
+            }
           >
             <option value="all">All roles</option>
             <option value="student">student</option>
@@ -109,7 +115,7 @@ export function AdminUsersPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredUsers.map((user) => (
+              {users.map((user) => (
                 <tr key={user.id}>
                   <td>{user.full_name || '—'}</td>
                   <td>{user.email}</td>
@@ -138,6 +144,16 @@ export function AdminUsersPage() {
             </tbody>
           </table>
         </div>
+      ) : null}
+      {data ? (
+        <Pagination
+          label="users"
+          page={table.page}
+          pageSize={table.pageSize}
+          total={data.total}
+          onPageChange={table.setPage}
+          onPageSizeChange={table.setPageSize}
+        />
       ) : null}
 
       <Card>
@@ -172,6 +188,7 @@ function ProvisionTeacherModal({
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -208,11 +225,14 @@ function ProvisionTeacherModal({
         <Field label="Temporary password" htmlFor="tPassword" hint="At least 8 characters.">
           <TextInput
             id="tPassword"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
+          <Button type="button" size="sm" variant="ghost" aria-label={showPassword ? 'Hide temporary password' : 'Show temporary password'} onClick={() => setShowPassword((value) => !value)}>
+            {showPassword ? 'Hide password' : 'Show password'}
+          </Button>
         </Field>
         <div className="row-between">
           <Button type="button" onClick={onClose}>

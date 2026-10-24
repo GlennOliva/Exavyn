@@ -2,7 +2,9 @@
 
 A full-stack, role-based proctored examination platform. Teachers author
 50-item MCQ exams, publish them only to approved, enrolled students, and the
-exam runs in fullscreen with a strict, server-enforced violation policy:
+exam runs in a focused exam mode (native fullscreen where the device permits it,
+an accessible viewport fallback otherwise) with a strict, server-enforced
+violation policy:
 
 **1st departure → warning ("Warning 1 of 2"); 2nd distinct departure →
 answering locks and the attempt is finalised atomically from the
@@ -11,10 +13,13 @@ calculated server-side, and every final result is immutable.
 
 > **Honest monitoring disclaimer.** Browser monitoring cannot be a guarantee
 > against cheating. This application never claims to "prevent" cheating. It
-> records a well-documented policy, runs in fullscreen, deduplicates
-> departures, and locks/finalises deterministically. It does not lock a device
-> (browser fullscreen can be exited with OS-level keys), does not record
-> screencapture, and cannot police external devices. See
+> records a well-documented policy, requests fullscreen when available,
+> deduplicates departures, and locks/finalises deterministically. Where the
+> Fullscreen API is unavailable (notably iPhone/iPad Safari), it uses a
+> viewport-filling focused layout instead of blocking the student, and says so
+> honestly. It does not lock a device (browser fullscreen can be exited with
+> OS-level keys), does not record screencapture, and cannot police external
+> devices. See
 > [Browser limitations and future work](#browser-limitations-and-future-work).
 
 ---
@@ -42,9 +47,9 @@ calculated server-side, and every final result is immutable.
 
 | Role | Can do | Routes |
 | --- | --- | --- |
-| Admin | Promote teachers/admins, suspend accounts, view all courses/exams/etc., reports, audit logs | `/admin`, `/admin/users`, `/admin/courses`, `/admin/exams`, `/admin/reports`, `/admin/audit` |
-| Teacher | Create/edit/archive/delete courses, retrieve/rotate join codes, approve/reject enrollment, author/publish/duplicate/archive/restore/delete exams, edit published-exam settings (schedule, attempt limits, result policy, answer-review policy, pass threshold), view results, attempt/event detail, per-question review, CSV export | `/teacher`, `/teacher/courses`, `/teacher/courses/:id`, `/teacher/exams/new`, `/teacher/exams/:id/{edit,results}`, `/teacher/attempts/:id` |
-| Student | Register publicly (student role only), join by code, view own attempts/results/history, review released answers per question, take fullscreen exam | `/student`, `/student/join`, `/student/courses/:id`, `/student/exams/:id`, `/student/exams/:id/take`, `/student/attempts/:id/result`, `/student/attempts/:id/review`, `/student/history`, `/profile` |
+| Admin | Promote teachers/admins, suspend accounts, view all courses/exams/etc., reports, audit logs, manage all feedback | `/admin`, `/admin/users`, `/admin/courses`, `/admin/exams`, `/admin/reports`, `/admin/audit`, `/feedback` |
+| Teacher | Create/edit/archive/delete courses, manage exams and results, and manage feedback associated with owned courses/exams | `/teacher`, `/teacher/courses`, `/teacher/courses/:id`, `/teacher/exams/new`, `/teacher/exams/:id/{edit,results}`, `/teacher/attempts/:id`, `/feedback` |
+| Student | Register, join courses, take exams, view released results/reviews, configure profile appearance, and submit/view own feedback | `/student`, `/student/join`, `/student/courses/:id`, `/student/exams/:id`, `/student/exams/:id/take`, `/student/attempts/:id/result`, `/student/attempts/:id/review`, `/student/history`, `/profile`, `/feedback` |
 | Public | Login, register, password recovery | `/login`, `/register`, `/forgot-password`, `/update-password`|
 
 Route guards are a UI convenience; the database enforces authorization on
@@ -56,8 +61,13 @@ role through the UI or any direct API call.
 Shown to students on the pre-exam instructions screen and enforced
 end-to-end:
 
-- The exam **must** run in fullscreen on a desktop browser. Leaving fullscreen
-  is a departure signal.
+- The exam requests **native fullscreen from the start gesture** when the
+  document reports that it can. Leaving fullscreen is a departure signal.
+- If the request is unsupported or rejected (for example, iPhone/iPad Safari),
+  the exam continues in an **accessible fallback** that fills the available
+  viewport. The absence of fullscreen is never a violation, never blocks
+  recovery, and is labelled "Focused layout · fullscreen unavailable" rather
+  than being described as fullscreen or lockdown.
 - **Departures** are physical presence losses: window blur (after a 1 s grace,
   which is what an OS app switch — Command+Tab / Alt+Tab — produces), tab hidden
   (visibility change), fullscreen exit, or an attempted navigation away from the
@@ -88,7 +98,9 @@ end-to-end:
 
 See `src/lib/config.ts` for `VIOLATION_THRESHOLD` (fixed at 2),
 `FOCUS_LOSS_GRACE_MS` (1 s), and `DEPARTURE_COALESCE_MS` (1.2 s). The database
-enforces the threshold of 2 with a check constraint.
+enforces the threshold of 2 with a check constraint. Fallback exams keep the
+same visibility/focus monitoring where the browser reports it, but the UI
+explicitly notes that a web page cannot prevent app switching.
 
 ## Grading, timing, and finality
 
@@ -98,21 +110,22 @@ enforces the threshold of 2 with a check constraint.
   security-definer RPC `get_attempt_payload`, which never includes a
   correct answer.
 - **Correct answers are released separately from the score.** Each attempt
-  snapshots an `answer_review` policy (`immediate` / `after_attempts` /
-  `after_close` / `never`) and a `pass_threshold`. Per-question review is served
+  snapshots an `answer_review` policy (`immediate` / `scheduled` /
+  `after_attempts` / `after_close` / `never`) and a `pass_threshold`. Per-question review is served
   only through the authorized, release-gated RPC `get_attempt_review`, which
   returns `questions: []` until the policy releases and enforces that answer
   review is never earlier than score release. A student must still be
   approved-enrolled; the owner teacher and admins always see the keys.
-- Answers are autosaved with a revision + request id, persisted in the user's
-  browser for offline retry, and the server rejects out-of-order or stale
-  writes.
+- Answers are keyed by attempt/question UUID and saved as stable option UUIDs.
+  Every logical change uses a new request id and increasing per-question
+  revision; the server rejects stale writes. Next, Previous, revisits, and
+  manual submission wait for the latest save. Clearing persists a null choice.
 - `submit_attempt`, `record_violation` at threshold, and the expiry job all
   call the same `app.finalize_attempt` which grades with `SELECT ... FOR
   UPDATE` on the attempt — exactly one consistent result regardless of
   racing submits.
-- Result release (`immediate` vs `after_close`) is enforced server-side in
-  `get_result`.
+- Result release (`immediate`, `scheduled`, or `after_close`) is enforced by
+  every student result RPC and direct unreleased attempt rows are hidden by RLS.
 
 ## Courses, attempts, and result policy
 
@@ -133,9 +146,21 @@ attempt snapshots the result-release policy at creation. Resuming an in-progress
 attempt never consumes one; submitted, expired, and violation-finalised attempts
 all count; lowering the limit never deletes history or invalidates an active
 attempt. `get_my_exam_attempts` reports `used`/`remaining` plus the per-attempt
-list, and `get_my_results` is the release-guarded student history (a direct
-`exam_attempts` select still exposes raw score columns — the student UI avoids
-it; see the runbook's documented API gap).
+list, and `get_my_results_page` is the release-guarded, server-paginated student
+ history (search + page/page-size in Postgres, fixed 10/25/50 sizes). Direct
+ student access to unreleased `exam_attempts` rows is blocked by RLS.
+
+**Tables and result status.** Every authorized list — admin users/courses/exams/
+reports/audit, teacher courses/enrollments/exams/results/violations, student
+courses/exams/history — uses the same URL-backed pagination control (10/25/50,
+Previous/Next, "1–10 of 42"). Search, filters, and sorting are applied before
+the page slice; the browser never downloads the whole table and hides rows.
+Active-exam question navigation is deliberately excluded. Score badges use the
+authoritative unrounded percentage against the snapshotted teacher threshold:
+green **Passed** at/above the threshold, yellow **Near passing** inside the
+10-point band immediately below it, red **Failed** below that. A missing
+threshold, pending attempt, or unreleased result is neutral and never implies
+pass/fail.
 
 **Answer review and pass threshold.** A teacher also sets `answer_review` and an
 optional `pass_threshold` (0–100) on drafts and published exams. Both are
@@ -159,12 +184,15 @@ Playwright, Supabase (Postgres, auth, RLS, Edge Functions).
 
 ```
 src/
-  lib/            supabase client, config, types, errors, csv, format, datetime, useAsync
-  features/       auth, courses, exams, attempts, results, admin, monitoring
-  components/     ui, guards, layout (AppShell)
+  lib/            supabase client, config, types, errors, csv, format, datetime,
+                  useAsync, pagination
+  features/       auth, courses, exams, attempts, results, admin, monitoring,
+                  exam/fullscreen
+  components/     ui, guards, layout (AppShell), Pagination, ScoreBadge
   pages/          auth, admin, teacher, student, profile
 supabase/
-  migrations/     versioned SQL (0000 init -> 0009 teacher features -> 0010 answer review)
+  migrations/     versioned SQL (0000 init -> 0009 teacher features -> 0010 answer
+                  review -> 0011/0012 paginated student results)
   functions/      bootstrap-admin, provision-teacher, _shared/cors
   tests/          rls.test.mjs (real-user-token RLS/grant tests)
 scripts/
@@ -284,15 +312,17 @@ themes cannot exit fullscreen or register as a departure during an exam.
 | --- | --- | --- |
 | `npm run typecheck` | `tsc -b` (strict; note: `npx tsc --noEmit` does **not** check referenced projects) | green |
 | `npm run lint` | ESLint (TS + React-Hooks classic rules) | green |
-| `npm test` | 96 Vitest unit/component tests | green |
+| `npm test` | 118 Vitest unit/component tests | green |
 | `npm run build` | production build | green |
-| `npm run test:e2e` | Playwright public-surface + registration + branding/theme smoke (needs `npx playwright install`) | green: 26/26 (Chromium + Firefox); authenticated/admin specs skip unless `E2E_*` set (Chromium, headed: authenticated 3/3, admin 2/2) |
+| `npm run test:e2e` | Playwright public/auth/branding plus credential-gated exam checks | green: 33 passed, 9 skipped, 0 failed |
+| `E2E_ANSWER_INTEGRITY=true npx playwright test tests/e2e/answer-integrity.exam.spec.ts --project=chromium --workers=1` | Dedicated shuffled B → C, delayed-save, clear, reload, database/grade/review scenario | green: 1/1 hosted |
 | `npm run e2e:fixture` | Provision a self-contained authenticated-e2e fixture (teacher + student + published exam) into `.env.server.local` | used for the headed authenticated flow |
 | `npm run test:rls` | RLS/grant checks with real user tokens (incl. review-RPC authorization, role-escalation denial, cross-student isolation) | verified 36/36 live (user tokens only) |
-| `npm run test:workflow` | Authenticated workflow + immutability + release policy + teacher features + answer review + pass threshold | verified 57/57 live (service role for fixture setup) |
+| `npm run test:workflow` | Authenticated workflow, answer revisions/clear/review mapping, release policy, bookmarks, pagination | verified 65/65 live |
 | `npm run test:concurrency` | Races, episode dedup, controller recovery, expiry | verified 5/5 live |
 | `npm run test:finality` | Final-score immutability: idempotent submit, no rewrite/delete by any user role | verified 10/10 live |
-| `npm run test:hosted` | RLS → workflow → concurrency → finality, sequentially | verified live: 36 + 57 + 5 + 10, exit 0 |
+| `npm run test:feedback` | Feedback deduplication and user/teacher/admin/private-note isolation | verified 6/6 live |
+| `npm run test:hosted` | RLS → workflow → concurrency → finality → feedback | verified live: 122/122, exit 0 |
 | `npm run check:project` | Reachability + table/RPC presence (browser-safe only) | works with `.env.local` alone |
 | `npm run check:env` | Server-env presence check (values never printed) | reports READY/BLOCKED per capability |
 | `npm run users:confirm` | List/confirm pre-existing **unconfirmed** accounts (dry-run default; `--apply`) | read-only by default; never deletes or resets passwords |
@@ -302,7 +332,11 @@ Unit/component coverage highlights: the departure deduplication state machine
 second distinct departure is a new episode; tail signals merge), the
 `useExamMonitor` DOM wiring (real `visibilitychange` → `visibility_hidden`,
 sustained `blur` → `focus_lost` after the grace window, a quick blur ignored,
-`fullscreenchange` → `fullscreen_exit`), exam-draft validation, the TXT
+`fullscreenchange` → `fullscreen_exit`), the accessible-fallback rules
+(no fullscreen violation and no fullscreen requirement for recovery), score
+classification boundaries (unrounded threshold, 10-point near band, neutral
+no-threshold/unreleased states), pagination maths and PostgREST search escaping,
+exam-draft validation, the TXT
 questionnaire parser (`src/features/exams/txtImport.test.ts`) and its preview
 dialog, CSV formula-injection escaping, formatting, and shared UI behaviour.
 
@@ -381,9 +415,9 @@ acceptance matrix, fixture/cleanup policy).
 
 Local (deterministic) — **pass**:
 
-- `tsc -b`, ESLint, `vitest` (96/96), `vite build` all pass.
-- Hosted suites (`npm run test:hosted`, exit 0): RLS 36/36, workflow 57/57,
-  concurrency 5/5, finality 10/10 (100/100), service role for fixture setup only.
+- `tsc -b`, ESLint, `vitest` (118/118), `vite build` all pass.
+- Hosted suites (`npm run test:hosted`, exit 0): RLS 36/36, workflow 65/65,
+  concurrency 5/5, finality 10/10, feedback 6/6 (122/122).
 - Playwright public-surface + registration + branding/theme smoke: 26/26 across
   Chromium and Firefox (registration: no duplicate submit; clear 429 email-limit
   message; themes: Light/Dark/System control, persistence, live System following,
@@ -422,8 +456,7 @@ Re-verified live against a dedicated hosted test project (project ref
 Re-run live this session with the service role available (`npm run test:hosted`,
 exit 0) — **pass**:
 
-- Authenticated workflow (acceptance 1–15, 17, 18, 21, 22, 23, 26–30) via
-  `npm run test:workflow` — **57/57**: admin provisioning, cross-teacher
+- Authenticated workflow via `npm run test:workflow` — **65/65**: admin provisioning, cross-teacher
   isolation, enrollment gating, publish, no-leak payload, controller-gated
   resume, server grading (30/50 = 60%), duplicate/stale/foreign-controller
   saves, one-episode dedup, warning-then-finalize, post-finalize no-ops,
@@ -434,6 +467,8 @@ exit 0) — **pass**:
   answer review + pass threshold: immediate per-question detail for the owning
   student, owner-teacher access, peer-student denial, `never` withholding all
   key material, `after_close`/`after_attempts` gating with `questions: []`,
+  scheduled score/review boundaries, direct-API withholding, stable answer
+  changes/clears/out-of-order writes, bookmark persistence, exact review mapping,
   and `passed` reporting above/below the threshold.
 - Concurrency (acceptance 13, 16, 19, 20) via `npm run test:concurrency` —
   **5/5**: racing submit/violation/save, duplicate-episode storm, controller
@@ -525,39 +560,38 @@ supabase secrets set BOOTSTRAP_ADMIN_TOKEN=<random> SUPABASE_SERVICE_ROLE_KEY=<.
   Browser) is the honest path to device lockdown and is out of scope here.
 - No webcam/audio, no screen capture, no network-tab monitoring (the heartbeat
   timer fires in the background; the violation policy is the enforcement).
-- Strict exam taking targets desktop Chrome/Firefox; the app shows a warning on
-  non-desktop clients rather than silently weakening rules.
+- Native fullscreen remains browser-dependent. Unsupported iPhone/iPad and
+  other browsers continue in a safe-area-aware `100dvh` focused layout while
+  retaining observable focus/visibility monitoring.
 - Single-controller semantics mean one tab/device per attempt; recovery after
   a crash is lease-based and documented on the blocking screen.
 
 ## Completion report
 
-**Implemented (code complete):** 9 versioned SQL migrations (schema, enums,
-RLS, grants, triggers, 21 RPCs, controller-gated resume, suspended-account RLS
-gating, scheduled expiry finalisation), 2 Edge Functions, full React app for all
-roles (auth, admin, teacher, student, exam interface, results, monitoring),
-offline violation retry queue, single-controller recovery, startup/expiry
-finalisation, cross-tab coordination, searchable admin/teacher tables, CSV
-reports, dedup state machine, RLS/unit/e2e test suites, demo seeder, environment
-template, and this runbook.
+**Version 2 implemented:** stable answer mapping/revisions and explicit clear,
+controlled save-before-navigation, bookmarks, independent scheduled score/key
+release, score classification, shared pagination, password visibility, responsive
+sidebar/drawer, profile appearance settings, progress counts, exclusive session
+leases, account-linked role-scoped feedback, best-effort exam interaction
+restrictions, and fullscreen fallback.
 
-**Migrations:** `supabase/migrations/20260101000000…08*` — applied to a
-Supabase instance with `supabase db reset`.
+**Migrations:** forward-only `2026010100013` through `2026010100024` were applied
+to project `tddmtdhhckykwnoydvjc` without a reset and recorded in
+`supabase_migrations.schema_migrations`.
 
 **Checks actually run in this repository:**
-`npm run typecheck` ✓ · `npm run lint` ✓ · `npm test` 96/96 ✓ ·
-`npm run build` ✓ (one non-blocking chunk-size warning ~568 kB) ·
-`npm run test:e2e` ✓ 12/12 (Chromium + Firefox; public surface + registration) ·
-authenticated e2e ✓ 3/3 (Chromium, headed, isolated fixture + fresh exam) ·
-admin e2e ✓ 2/2 (Chromium; sign-in → `/admin`).
+`npm run typecheck` pass · `npm run lint` pass · `npm test` **118/118** ·
+`npm run build` pass (one non-blocking chunk-size warning) ·
+`npm run test:e2e` **33 passed / 9 skipped / 0 failed**. Firefox fullscreen
+exam cases and credential-gated admin cases account for the skips.
 
 **Hosted steps (dedicated test project `tddmtdhhckykwnoydvjc`):**
 10 migrations (`0000`–`0009`) applied via `supabase db push` (no reset); `bootstrap-admin`
 deployed and run to provision the first admin; `npm run seed` seeded the demo
 (6 users, course `SOP101`, approved + pending enrollment, one 50-item published
 exam) and is idempotent on re-run. Re-verified live: `npm run test:hosted`
-exit 0 — `rls` **36/36**, `workflow` **57/57**, `concurrency` **5/5**,
-`finality` **10/10** (service role used only for fixture setup). Also live:
+exit 0 — `rls` **36/36**, `workflow` **65/65**, `concurrency` **5/5**,
+`finality` **10/10**, feedback **6/6**: **122/122 hosted checks**.
 a scripted lifecycle **17/17** (start → acquire controller → payload → save →
 Warning 1 of 2 → duplicate-episode dedup → second departure → immutable
 `violation_limit` result → post-finalize no-ops); Edge Functions confirmed

@@ -10,6 +10,7 @@ export function UpdatePasswordPage() {
   const navigate = useNavigate();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -42,19 +43,25 @@ export function UpdatePasswordPage() {
         {error ? <Alert tone="danger" role="alert">{error}</Alert> : null}
         <form onSubmit={onSubmit}>
           <Field label="New password" htmlFor="newPassword">
-            <TextInput
-              id="newPassword"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <div className="row" style={{ gap: 8 }}>
+              <TextInput
+                id="newPassword"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <Button type="button" variant="ghost" onClick={() => setShowPassword((v) => !v)}>
+                {showPassword ? 'Hide' : 'Show'}
+              </Button>
+            </div>
           </Field>
           <Field label="Confirm new password" htmlFor="confirmPassword">
             <TextInput
               id="confirmPassword"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               autoComplete="new-password"
               required
               value={confirm}

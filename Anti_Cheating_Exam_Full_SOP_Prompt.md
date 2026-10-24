@@ -99,7 +99,7 @@ Students may see scheduled published exams, but the backend releases question co
 
 Dashboard shows upcoming, available, closed, and completed exams. Pre-exam screen shows course, instructions, item count, duration, availability, single-attempt rule, two-violation rule, final-score rule, and browser-monitoring limitations.
 
-Require the student to acknowledge the rules. Complete browser support checks and a user-initiated fullscreen request before starting the attempt. Unsupported strict-mode browsers receive a clear message and cannot start; do not silently run without monitoring.
+Require the student to acknowledge the rules. Detect fullscreen capability at runtime and request fullscreen synchronously from the start gesture. If the request is unsupported or rejected (for example, iPhone/iPad Safari), do not block the student: clearly disclose that the exam will use a focused viewport fallback, that monitoring is limited where the browser reports it, and that a web page cannot prevent app switching. Never describe the fallback as fullscreen or as device lockdown. Continue monitoring visibility and focus where available.
 
 Once started, display question text, choices, question navigation, answered/unanswered indicators, server-derived remaining time, save status, warning count, and a submit button. Support keyboard navigation and readable contrast. Hide unrelated application navigation during the attempt.
 
@@ -122,9 +122,9 @@ Do not count clicking another answer, ordinary keyboard focus changes inside the
 
 One physical departure may emit blur, visibilitychange, and fullscreenchange together. Group these into one departure episode with a stable episode UUID. Attach multiple signal types to that episode but increment the count once. Use a state machine and short coalescing interval; do not rely only on a fixed debounce timeout.
 
-Rearm departure detection only after the document is visible, window focus has returned, and required fullscreen has been restored. A prolonged absence counts as one episode. A later departure after recovery counts as the second. Deduplicate navigation episodes against overlapping departure signals. Persist pending episode IDs across reload and retries; never generate a new UUID simply because a request failed.
+Rearm departure detection only after the document is visible, window focus has returned, and — only when the attempt is in fullscreen mode — required fullscreen has been restored. Fallback attempts never require fullscreen and must not count its absence as a departure. A prolonged absence counts as one episode. A later departure after recovery counts as the second. Deduplicate navigation episodes against overlapping departure signals. Persist pending episode IDs across reload and retries; never generate a new UUID simply because a request failed.
 
-After warning one, pause answer interaction until the student acknowledges the warning and restores fullscreen. The timer continues running. Do not auto-request fullscreen without the required user gesture.
+After warning one, pause answer interaction until the student acknowledges the warning and, in fullscreen mode, restores fullscreen. The timer continues running. Do not auto-request fullscreen without the required user gesture; if the request fails, switch honestly to fallback rather than trapping the student.
 
 Send event reports to a backend function that verifies the caller owns an active attempt. Store attempt ID, episode ID, signal types, client observed time, server received time, and relevant diagnostic details. Use server time for enforcement and make duplicate episode reports idempotent. The server owns the warning count and returns the authoritative attempt state.
 
@@ -200,9 +200,9 @@ Admin: dashboard, user management, teacher approvals, course directory, examinat
 
 Teacher: dashboard, courses, course detail/enrollment requests, exam builder, exam preview, exam settings/publication, student results, attempt/event detail.
 
-Student: dashboard, join course, course detail/exam list, exam instructions, fullscreen exam interface, final result, examination history, profile.
+Student: dashboard, join course, course detail/exam list, exam instructions, exam interface (native fullscreen where available, accessible viewport fallback otherwise), final result, examination history, profile.
 
-Use a professional school-oriented design with readable typography, consistent spacing, status badges, searchable tables, and clear actions. Support responsive dashboards; strict exam taking initially targets desktop browsers with tested fullscreen support. Display a clear unsupported-device message rather than silently weakening exam rules.
+Use a professional school-oriented design with readable typography, consistent spacing, status badges, searchable tables, and clear actions. Support responsive dashboards and mobile exam taking through the documented fallback. Native fullscreen is preferred where tested; never silently weaken the monitoring policy or mislabel fallback as fullscreen. Paginate every data table server-side (default 10, options 10/25/50, stable ordering, filters before slicing) and use green/yellow/red score badges for passed/near-passing/failed with neutral pending/unreleased states.
 
 ## 14. Development SOP and phase exit criteria
 
@@ -250,6 +250,9 @@ Proceed through authorized implementation and reversible fixes. Ask only about g
 22. Archiving a course or suspending an account preserves historical results and audit records.
 23. CSV exports include only authorized records and escape spreadsheet-formula injection in user-supplied text fields.
 24. Browser tests cover supported desktop browsers. Manually verify real tab switching, app switching, fullscreen exit, reconnect, and reload because synthetic events alone do not establish browser behavior.
+25. Devices or browsers without a usable Fullscreen API can start, answer, save, and submit in the accessible fallback; fullscreen absence is never a violation, and recovery in fallback requires only visible + focused.
+26. Every authorized data list paginates server-side with 10/25/50 page sizes, stable total/order, URL-preserved state, and filters/search applied before the page slice; active-exam question navigation is not paginated.
+27. Score status is computed from the unrounded authoritative percentage against the snapshotted pass threshold: green at/above, yellow within 10 points below, red further below; missing thresholds and unreleased/pending results stay neutral and do not imply pass/fail.
 
 Use isolated test accounts for admin, two teachers, and multiple enrolled/unenrolled students. Test RLS with real user tokens; service-role requests do not prove user-policy enforcement. Include duplicate/reordered requests and concurrency tests against the database.
 
@@ -272,3 +275,27 @@ Start by inspecting the project and existing instructions. State the architectur
 - Supabase RLS: https://supabase.com/docs/guides/database/postgres/row-level-security
 
 These references support the browser capability boundaries and database authorization approach. The two-violation threshold, episode grouping, connectivity policy, and final-score rules above are application requirements.
+## Exavyn Version 2 implementation addendum (2026-10-24)
+
+- Answers are keyed by `(attempt_id, question_id)` and store immutable option
+  UUIDs. Each logical change has a fresh request UUID and increasing revision;
+  stale writes cannot replace newer selections. Null is an explicit clear.
+- Next, Previous, bookmarked/visited revisits, and manual submission wait for
+  the latest accepted save. Question numbers and bookmark summaries are status
+  only and never navigate; every revisit uses Previous/Next. Expiry and
+  violation-limit finalization never wait indefinitely for the client.
+- Question and option orders are generated once at attempt creation and reused
+  from persisted JSON order on resume, grading, and review.
+- Score and answer release are separate, snapshot per attempt, support scheduled
+  instants, and are enforced in RPCs and RLS. Answer keys never release before
+  scores. Score colors use the unrounded configured threshold and a ten-point
+  near-passing band.
+- Feedback is account-linked, paginated, duplicate-protected, and role-scoped.
+  Private staff notes are excluded from the submitter endpoint; visible staff
+  responses are separate. No notification email is sent.
+- Context menu and page copy/cut shortcuts are best-effort deterrents scoped to
+  the active exam. They are not violations or proof of cheating, do not block
+  paste in editable fields, and do not disable navigation/accessibility keys.
+- Fullscreen is capability-detected. Unsupported/rejected requests use a
+  safe-area-aware viewport fallback and are not violations. Managed browser or
+  kiosk software is required for actual device lockdown.
