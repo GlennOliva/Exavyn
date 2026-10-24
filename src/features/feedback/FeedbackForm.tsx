@@ -1,8 +1,25 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Alert, Button, Field, Select, TextArea, TextInput } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
-import type { FeedbackCategory } from '../../lib/database.types';
+import type { FeedbackCategory, FeedbackRecipient } from '../../lib/database.types';
+import { useAuth } from '../auth/AuthContext';
+import { listStudentEnrollmentsPage } from '../courses/api';
+import { listStudentExamsPage } from '../exams/api';
 import { submitFeedback } from './api';
+
+interface CourseOption {
+  id: string;
+  title: string;
+  course_code: string;
+}
+
+interface ExamOption {
+  id: string;
+  title: string;
+  course_id: string;
+  course_title?: string;
+  course_code?: string;
+}
 
 export function FeedbackForm({
   examId = null,
@@ -17,17 +34,81 @@ export function FeedbackForm({
   postExam?: boolean;
   onSubmitted?: () => void;
 }) {
+  const { user } = useAuth();
+  const isStudent = user?.role === 'student';
   const [category, setCategory] = useState<FeedbackCategory>(postExam ? 'exam_concern' : 'suggestion');
   const [subject, setSubject] = useState(postExam ? 'Exam feedback' : '');
   const [message, setMessage] = useState('');
   const [rating, setRating] = useState<number | ''>('');
   const [relatedCourse, setRelatedCourse] = useState(courseId ?? '');
   const [relatedExam, setRelatedExam] = useState(examId ?? '');
-  const [relatedQuestion, setRelatedQuestion] = useState(questionId ?? '');
+  const [recipientType, setRecipientType] = useState<FeedbackRecipient>(
+    postExam || courseId ? 'course_teacher' : 'administration',
+  );
+  const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [exams, setExams] = useState<ExamOption[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const requestId = useRef(crypto.randomUUID());
+
+  useEffect(() => {
+    if (!isStudent || postExam) return;
+    let active = true;
+    void Promise.all([
+      listStudentEnrollmentsPage({ page: 1, pageSize: 50, q: '' }),
+      listStudentExamsPage({ page: 1, pageSize: 50, q: '' }),
+    ])
+      .then(([enrollmentPage, examPage]) => {
+        if (!active) return;
+        setCourses(
+          enrollmentPage.rows
+            .filter((row) => row.status === 'approved' && row.course)
+            .map((row) => ({
+              id: row.course!.id,
+              title: row.course!.title,
+              course_code: row.course!.course_code,
+            })),
+        );
+        setExams(
+          examPage.rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            course_id: row.course_id,
+            course_title: row.course?.title,
+            course_code: row.course?.course_code,
+          })),
+        );
+      })
+      .catch(() => {
+        /* The optional selector should not block feedback submission. */
+      });
+    return () => {
+      active = false;
+    };
+  }, [isStudent, postExam]);
+
+  const canAddressTeacher = Boolean(relatedCourse || relatedExam || examId || courseId);
+
+  useEffect(() => {
+    if (!canAddressTeacher && recipientType === 'course_teacher') {
+      setRecipientType('administration');
+    }
+  }, [canAddressTeacher, recipientType]);
+
+  const chooseCourse = (value: string) => {
+    setRelatedCourse(value);
+    if (relatedExam) {
+      const exam = exams.find((item) => item.id === relatedExam);
+      if (exam && value && exam.course_id !== value) setRelatedExam('');
+    }
+  };
+
+  const chooseExam = (value: string) => {
+    setRelatedExam(value);
+    const exam = exams.find((item) => item.id === value);
+    if (exam?.course_id) setRelatedCourse(exam.course_id);
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -41,6 +122,10 @@ export function FeedbackForm({
       setError('Message must be between 10 and 5000 characters.');
       return;
     }
+    const recipient: FeedbackRecipient =
+      canAddressTeacher && recipientType === 'course_teacher'
+        ? 'course_teacher'
+        : 'administration';
     setBusy(true);
     try {
       await submitFeedback({
@@ -49,13 +134,18 @@ export function FeedbackForm({
         message: message.trim(),
         rating: rating === '' ? null : rating,
         courseId: relatedCourse || null,
-        examId: relatedExam || null,
-        questionId: relatedQuestion || null,
+        examId: relatedExam || examId || null,
+        questionId,
+        recipientType: recipient,
         requestId: requestId.current,
       });
       requestId.current = crypto.randomUUID();
       setMessage('');
-      setNotice('Feedback submitted. It is linked to your account so you can track the response.');
+      setNotice(
+        recipient === 'course_teacher'
+          ? 'Feedback sent to the course teacher. It is linked to your account so you can track the response.'
+          : 'Feedback sent to administration. It is linked to your account so you can track the response.',
+      );
       onSubmitted?.();
     } catch (err) {
       setError(errorMessage(err));
@@ -84,23 +174,55 @@ export function FeedbackForm({
           </Select>
         </Field>
       </div>
+      <Field
+        label="Send to"
+        htmlFor="feedback-recipient"
+        hint="Course-teacher feedback goes only to the teacher who owns the selected course."
+      >
+        <Select
+          id="feedback-recipient"
+          value={recipientType}
+          disabled={!canAddressTeacher}
+          onChange={(e) => setRecipientType(e.target.value as FeedbackRecipient)}
+        >
+          <option value="administration">Administration</option>
+          <option value="course_teacher" disabled={!canAddressTeacher}>Course teacher</option>
+        </Select>
+      </Field>
+      {isStudent && !postExam ? (
+        <div className="form-grid">
+          <Field label="Related course (optional)" htmlFor="feedback-course">
+            <Select id="feedback-course" value={relatedCourse} onChange={(e) => chooseCourse(e.target.value)}>
+              <option value="">No course</option>
+              {courses.map((course) => (
+                <option key={course.id} value={course.id}>
+                  {course.course_code} — {course.title}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Related exam (optional)" htmlFor="feedback-exam">
+            <Select id="feedback-exam" value={relatedExam} onChange={(e) => chooseExam(e.target.value)}>
+              <option value="">No exam</option>
+              {exams
+                .filter((exam) => !relatedCourse || exam.course_id === relatedCourse)
+                .map((exam) => (
+                  <option key={exam.id} value={exam.id}>
+                    {exam.title}
+                    {exam.course_code ? ` — ${exam.course_code}` : ''}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+        </div>
+      ) : null}
       <Field label="Subject" htmlFor="feedback-subject">
         <TextInput id="feedback-subject" value={subject} maxLength={160} required onChange={(e) => setSubject(e.target.value)} />
       </Field>
-      <Field label="Message" htmlFor="feedback-message" hint="10-5000 characters">
+      <Field label="Message" htmlFor="feedback-message" hint="10–5000 characters">
         <TextArea id="feedback-message" value={message} minLength={10} maxLength={5000} required rows={5} onChange={(e) => setMessage(e.target.value)} />
       </Field>
-      {!postExam ? (
-        <details>
-          <summary>Related record (optional)</summary>
-          <div className="form-grid mt-2">
-            <Field label="Course ID" htmlFor="feedback-course"><TextInput id="feedback-course" value={relatedCourse} onChange={(e) => setRelatedCourse(e.target.value.trim())} /></Field>
-            <Field label="Exam ID" htmlFor="feedback-exam"><TextInput id="feedback-exam" value={relatedExam} onChange={(e) => setRelatedExam(e.target.value.trim())} /></Field>
-            <Field label="Question ID" htmlFor="feedback-question"><TextInput id="feedback-question" value={relatedQuestion} onChange={(e) => setRelatedQuestion(e.target.value.trim())} /></Field>
-          </div>
-        </details>
-      ) : null}
-      <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Submitting...' : 'Submit feedback'}</Button>
+      <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Submitting…' : 'Submit feedback'}</Button>
     </form>
   );
 }

@@ -312,17 +312,18 @@ themes cannot exit fullscreen or register as a departure during an exam.
 | --- | --- | --- |
 | `npm run typecheck` | `tsc -b` (strict; note: `npx tsc --noEmit` does **not** check referenced projects) | green |
 | `npm run lint` | ESLint (TS + React-Hooks classic rules) | green |
-| `npm test` | 118 Vitest unit/component tests | green |
+| `npm test` | 121 Vitest unit/component tests | green |
 | `npm run build` | production build | green |
 | `npm run test:e2e` | Playwright public/auth/branding plus credential-gated exam checks | green: 33 passed, 9 skipped, 0 failed |
-| `E2E_ANSWER_INTEGRITY=true npx playwright test tests/e2e/answer-integrity.exam.spec.ts --project=chromium --workers=1` | Dedicated shuffled B → C, delayed-save, clear, reload, database/grade/review scenario | green: 1/1 hosted |
+| `E2E_ANSWER_INTEGRITY=true npx playwright test tests/e2e/answer-integrity.exam.spec.ts --project=chromium --workers=1` | Dedicated shuffled B → C, delayed-save, clear, reload, database/grade/review scenario plus progress counters | green: 1/1 local and production |
+| `npx playwright test tests/e2e/sidebar-admin.spec.ts tests/e2e/theme-authenticated.spec.ts tests/e2e/feedback.spec.ts --project=chromium` | Credential-gated sidebar/admin embed, mobile drawer focus, theme persistence, feedback routing/unread | green: 9/9 production |
 | `npm run e2e:fixture` | Provision a self-contained authenticated-e2e fixture (teacher + student + published exam) into `.env.server.local` | used for the headed authenticated flow |
 | `npm run test:rls` | RLS/grant checks with real user tokens (incl. review-RPC authorization, role-escalation denial, cross-student isolation) | verified 36/36 live (user tokens only) |
 | `npm run test:workflow` | Authenticated workflow, answer revisions/clear/review mapping, release policy, bookmarks, pagination | verified 65/65 live |
 | `npm run test:concurrency` | Races, episode dedup, controller recovery, expiry | verified 5/5 live |
 | `npm run test:finality` | Final-score immutability: idempotent submit, no rewrite/delete by any user role | verified 10/10 live |
-| `npm run test:feedback` | Feedback deduplication and user/teacher/admin/private-note isolation | verified 6/6 live |
-| `npm run test:hosted` | RLS → workflow → concurrency → finality → feedback | verified live: 122/122, exit 0 |
+| `npm run test:feedback` | Feedback routing, deduplication, unread state, and user/teacher/admin/private-note isolation | verified 18/18 live |
+| `npm run test:hosted` | RLS → workflow → concurrency → finality → feedback | verified live: 134/134, exit 0 |
 | `npm run check:project` | Reachability + table/RPC presence (browser-safe only) | works with `.env.local` alone |
 | `npm run check:env` | Server-env presence check (values never printed) | reports READY/BLOCKED per capability |
 | `npm run users:confirm` | List/confirm pre-existing **unconfirmed** accounts (dry-run default; `--apply`) | read-only by default; never deletes or resets passwords |
@@ -415,9 +416,9 @@ acceptance matrix, fixture/cleanup policy).
 
 Local (deterministic) — **pass**:
 
-- `tsc -b`, ESLint, `vitest` (118/118), `vite build` all pass.
+- `tsc -b`, ESLint, `vitest` (121/121), `vite build` all pass.
 - Hosted suites (`npm run test:hosted`, exit 0): RLS 36/36, workflow 65/65,
-  concurrency 5/5, finality 10/10, feedback 6/6 (122/122).
+  concurrency 5/5, finality 10/10, feedback 18/18 (134/134).
 - Playwright public-surface + registration + branding/theme smoke: 26/26 across
   Chromium and Firefox (registration: no duplicate submit; clear 429 email-limit
   message; themes: Light/Dark/System control, persistence, live System following,
@@ -570,29 +571,32 @@ supabase secrets set BOOTSTRAP_ADMIN_TOKEN=<random> SUPABASE_SERVICE_ROLE_KEY=<.
 
 **Version 2 implemented:** stable answer mapping/revisions and explicit clear,
 controlled save-before-navigation, bookmarks, independent scheduled score/key
-release, score classification, shared pagination, password visibility, responsive
-sidebar/drawer, profile appearance settings, progress counts, exclusive session
-leases, account-linked role-scoped feedback, best-effort exam interaction
-restrictions, and fullscreen fallback.
+release, exact-point score classification, shared pagination, password visibility,
+responsive sidebar/drawer with persisted desktop collapse, profile appearance
+settings, answered/unanswered/marked progress counts, exclusive session leases,
+account-linked role-scoped feedback with two-way unread state, best-effort exam
+interaction restrictions, and fullscreen fallback.
 
-**Migrations:** forward-only `2026010100013` through `2026010100024` were applied
+**Migrations:** forward-only `2026010100013` through `2026010100025` were applied
 to project `tddmtdhhckykwnoydvjc` without a reset and recorded in
 `supabase_migrations.schema_migrations`.
 
 **Checks actually run in this repository:**
-`npm run typecheck` pass · `npm run lint` pass · `npm test` **118/118** ·
+`npm run typecheck` pass · `npm run lint` pass · `npm test` **121/121** ·
 `npm run build` pass (one non-blocking chunk-size warning) ·
-`npm run test:e2e` **33 passed / 9 skipped / 0 failed**. Firefox fullscreen
-exam cases and credential-gated admin cases account for the skips.
+`npm run test:e2e` **33 passed / 9 skipped / 0 failed** for the public/smoke
+suite. Dedicated credential-gated specs add sidebar/admin **4/4**, theme
+**2/2**, feedback **3/3**, and answer integrity **1/1**, all green locally and
+against production.
 
 **Hosted steps (dedicated test project `tddmtdhhckykwnoydvjc`):**
-10 migrations (`0000`–`0009`) applied via `supabase db push` (no reset); `bootstrap-admin`
-deployed and run to provision the first admin; `npm run seed` seeded the demo
-(6 users, course `SOP101`, approved + pending enrollment, one 50-item published
-exam) and is idempotent on re-run. Re-verified live: `npm run test:hosted`
-exit 0 — `rls` **36/36**, `workflow` **65/65**, `concurrency` **5/5**,
-`finality` **10/10**, feedback **6/6**: **122/122 hosted checks**.
-a scripted lifecycle **17/17** (start → acquire controller → payload → save →
+forward migrations through `2026010100025` applied via `supabase db push` (no
+reset); `bootstrap-admin` deployed and run to provision the first admin;
+`npm run seed` seeded the demo (6 users, course `SOP101`, approved + pending
+enrollment, one 50-item published exam) and is idempotent on re-run. Re-verified
+live: `npm run test:hosted` exit 0 — `rls` **36/36**, `workflow` **65/65**,
+`concurrency` **5/5**, `finality` **10/10**, feedback **18/18**: **134/134
+hosted checks**. A scripted lifecycle **17/17** (start → acquire controller → payload → save →
 Warning 1 of 2 → duplicate-episode dedup → second departure → immutable
 `violation_limit` result → post-finalize no-ops); Edge Functions confirmed
 ACTIVE (v2) via CLI and probed (`bootstrap-admin` 403 bad token,

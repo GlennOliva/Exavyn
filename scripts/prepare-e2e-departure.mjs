@@ -88,10 +88,13 @@ async function main() {
   const password = `Exam-${run}-Aa1`;
   const teacherEmail = `e2e-teacher-${run}@exam.test`;
   const studentEmail = `e2e-student-${run}@exam.test`;
+  const adminEmail = `e2e-admin-${run}@exam.test`;
 
   const teacher = await createUser(service, teacherEmail, 'E2E Teacher', password);
   const student = await createUser(service, studentEmail, 'E2E Student', password);
+  const admin = await createUser(service, adminEmail, 'E2E Admin', password);
   await setRole(service, teacher.id, 'teacher');
+  await setRole(service, admin.id, 'admin');
 
   const teacherC = await signIn(cfg, teacherEmail, password);
   const studentC = await signIn(cfg, studentEmail, password);
@@ -141,6 +144,8 @@ async function main() {
     'E2E_SUPABASE_CONFIGURED=true',
     `E2E_STUDENT_EMAIL=${studentEmail}`,
     `E2E_STUDENT_PASSWORD=${password}`,
+    `E2E_ADMIN_EMAIL=${adminEmail}`,
+    `E2E_ADMIN_PASSWORD=${password}`,
     `E2E_EXAM_ID=${examId}`,
     END,
   ].join('\n');
@@ -150,6 +155,7 @@ async function main() {
   console.log('  run id       :', run);
   console.log('  project      :', new URL(cfg.url).host);
   console.log('  student      :', studentEmail);
+  console.log('  admin        :', adminEmail);
   console.log('  exam id      :', examId);
   console.log('  env file     : .env.server.local (password written there, not printed)');
   console.log('  teacher      :', teacherEmail, `(role teacher, id ${teacher.id.slice(0, 8)}…)`);

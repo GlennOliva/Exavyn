@@ -119,18 +119,25 @@ p { margin: 0 0 0.8rem; }
   background: #092b45;
   color: #e8f7f7;
   border-right: 1px solid color-mix(in srgb, #62d4c8 30%, transparent);
-  transition: width 160ms ease, transform 160ms ease;
+  transition: transform 160ms ease;
+  max-height: 100dvh;
+  overflow-y: auto;
 }
 .sidebar-brand { min-height: 44px; }
+/* The wordmark is navy, so the navigation (which is always dark) needs a light
+   backing in every theme. */
+.sidebar-brand .brand-logo { height: 28px; background: #ffffff; padding: 4px 8px; border-radius: 8px; }
 .sidebar-role { color: #7ee0d5; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
 .sidebar-account { margin-top: auto; display: flex; flex-direction: column; gap: 0.75rem; }
 .sidebar-user { color: #d4e7ee; overflow: hidden; text-overflow: ellipsis; }
-.sidebar-collapsed .app-sidebar { width: 76px; }
-.sidebar-collapsed .nav-label, .sidebar-collapsed .sidebar-role, .sidebar-collapsed .sidebar-user, .sidebar-collapsed .sidebar-brand .brand-tagline { display: none; }
-.sidebar-collapsed .sidebar-brand { overflow: hidden; }
-.sidebar-collapsed .app-nav a { justify-content: center; }
 .sidebar-backdrop { display: none; }
-.sidebar-close { display: none; color: #fff; }
+.sidebar-close { display: none; color: #fff; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; padding: 0; }
+.menu-toggle { width: 44px; height: 44px; min-width: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.workspace-label { white-space: nowrap; }
+@media (min-width: 821px) {
+  /* Hiding rather than shrinking gives the content the full remaining width. */
+  .sidebar-collapsed .app-sidebar { display: none; }
+}
 .app-header {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -193,36 +200,41 @@ p { margin: 0 0 0.8rem; }
   font-weight: 500;
 }
 .app-sidebar .app-nav a { display: flex; align-items: center; gap: 0.65rem; color: #c4d8e2; }
+.app-sidebar .nav-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.nav-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; min-height: 20px; padding: 0 6px; border-radius: 999px; background: #f3bd4b; color: #1c2a33; font-size: 0.7rem; font-weight: 800; line-height: 1; }
 .app-sidebar .app-nav a:hover { background: rgba(126, 224, 213, 0.1); color: #fff; }
 .app-sidebar .app-nav a.active { background: #0d716f; color: #fff; box-shadow: inset 3px 0 #7ee0d5; }
 .app-sidebar a:focus-visible, .app-sidebar button:focus-visible { outline: 3px solid #7ee0d5; outline-offset: 2px; }
 .nav-marker { color: #7ee0d5; font-size: 1.3rem; line-height: 1; }
-.mobile-menu-button { display: none; }
 .app-nav a:hover { background: var(--surface-2); text-decoration: none; }
 .app-nav a.active { background: var(--primary-soft); color: var(--primary-strong); }
 .app-main { flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+.app-main:focus { outline: none; }
 
 @media (max-width: 820px) {
-  .app-sidebar, .sidebar-collapsed .app-sidebar {
+  .app-sidebar {
     position: fixed;
     z-index: 40;
     left: 0;
     top: 0;
     width: min(82vw, 280px);
+    height: 100dvh;
+    min-height: 100dvh;
     transform: translateX(-105%);
+    visibility: hidden;
     box-shadow: 18px 0 40px rgba(0, 0, 0, 0.35);
   }
-  .app-sidebar.drawer-open { transform: translateX(0); }
-  .sidebar-collapsed .nav-label, .sidebar-collapsed .sidebar-role, .sidebar-collapsed .sidebar-user { display: initial; }
-  .sidebar-collapsed .app-nav a { justify-content: flex-start; }
+  .app-sidebar.drawer-open { transform: translateX(0); visibility: visible; }
   .sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 35; border: 0; background: rgba(2, 15, 25, 0.58); }
   .sidebar-close { display: inline-flex; align-self: flex-start; }
-  .mobile-menu-button { display: inline-flex; }
-  .desktop-collapse-button { display: none; }
   .app-header { padding: max(0.65rem, env(safe-area-inset-top)) 0.85rem 0.65rem; }
+  .workspace-label { display: none; }
   .app-main { padding: 1rem 0.85rem 2rem; }
 }
 .narrow { max-width: 720px; }
+.settings-row { display: flex; gap: 1rem; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.settings-row h3 { margin: 0 0 0.25rem; }
+.settings-control { display: flex; align-items: center; min-height: 44px; }
 
 /* Cards ------------------------------------------------------------------- */
 .card {
@@ -387,6 +399,7 @@ tbody tr:hover { background: var(--surface-2); }
 .q-dot.visited { outline: 1px dashed var(--border); }
 .q-dot.current { outline: 2px solid var(--primary); outline-offset: 1px; background: var(--primary); color: #fff; border-color: transparent; }
 
+.q-stats { display: flex; flex-wrap: wrap; gap: 0.35rem 0.85rem; font-size: 0.82rem; color: var(--muted); }
 .progress-bar {
   width: 100%;
   height: 8px;

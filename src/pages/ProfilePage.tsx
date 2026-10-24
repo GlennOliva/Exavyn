@@ -58,12 +58,17 @@ export function ProfilePage() {
       </Card>
       <Card>
         <h2>Settings</h2>
-        <h3>Appearance</h3>
-        <div className="row-between">
+        <div className="settings-row">
           <div>
-            <p className="muted small">Theme preference</p>
+            <h3 id="appearance-heading">Appearance</h3>
+            <p className="muted small" id="appearance-hint">
+              Choose Light, Dark, or System. System follows your device setting and updates when
+              it changes.
+            </p>
           </div>
-          <ThemeToggle />
+          <div className="settings-control">
+            <ThemeToggle />
+          </div>
         </div>
       </Card>
     </div>

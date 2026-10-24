@@ -1,6 +1,17 @@
 import { supabase } from '../../lib/supabase';
 import { toAppError } from '../../lib/errors';
-import type { FeedbackCategory, FeedbackStatus } from '../../lib/database.types';
+import type {
+  FeedbackCategory,
+  FeedbackRecipient,
+  FeedbackStatus,
+} from '../../lib/database.types';
+
+/** Fired after a submit/update/read so the shell badge refreshes immediately. */
+export const FEEDBACK_UNREAD_EVENT = 'exavyn:feedback-unread';
+
+function notifyUnreadChanged(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(FEEDBACK_UNREAD_EVENT));
+}
 
 export interface FeedbackItem {
   id: string;
@@ -11,6 +22,8 @@ export interface FeedbackItem {
   message: string;
   rating: number | null;
   status: FeedbackStatus;
+  recipient_type: FeedbackRecipient;
+  recipient_teacher_name?: string | null;
   course_id: string | null;
   course_title: string | null;
   exam_id: string | null;
@@ -18,6 +31,7 @@ export interface FeedbackItem {
   question_id: string | null;
   staff_notes?: string | null;
   response: string | null;
+  has_unread?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -29,6 +43,15 @@ export interface FeedbackPageResult {
   page_size: number;
 }
 
+export interface StaffFeedbackFilters {
+  q: string;
+  status: string;
+  recipient: '' | FeedbackRecipient;
+  unreadOnly: boolean;
+  page: number;
+  pageSize: number;
+}
+
 export async function submitFeedback(input: {
   category: FeedbackCategory;
   subject: string;
@@ -37,6 +60,7 @@ export async function submitFeedback(input: {
   courseId?: string | null;
   examId?: string | null;
   questionId?: string | null;
+  recipientType: FeedbackRecipient;
   requestId: string;
 }): Promise<string> {
   const { data, error } = await supabase.rpc('submit_feedback', {
@@ -47,17 +71,21 @@ export async function submitFeedback(input: {
     p_course_id: input.courseId ?? null,
     p_exam_id: input.examId ?? null,
     p_question_id: input.questionId ?? null,
+    p_recipient_type: input.recipientType,
     p_request_id: input.requestId,
   });
   if (error) throw toAppError(error);
+  notifyUnreadChanged();
   return data;
 }
 
-async function getFeedbackPage(
-  rpc: 'get_my_feedback_page' | 'get_staff_feedback_page',
-  input: { q: string; status: string; page: number; pageSize: number },
-): Promise<FeedbackPageResult> {
-  const { data, error } = await supabase.rpc(rpc, {
+export async function getMyFeedbackPage(input: {
+  q: string;
+  status: string;
+  page: number;
+  pageSize: number;
+}): Promise<FeedbackPageResult> {
+  const { data, error } = await supabase.rpc('get_my_feedback_page', {
     p_search: input.q,
     p_status: input.status,
     p_page: input.page,
@@ -67,11 +95,18 @@ async function getFeedbackPage(
   return data as unknown as FeedbackPageResult;
 }
 
-export const getMyFeedbackPage = (input: { q: string; status: string; page: number; pageSize: number }) =>
-  getFeedbackPage('get_my_feedback_page', input);
-
-export const getStaffFeedbackPage = (input: { q: string; status: string; page: number; pageSize: number }) =>
-  getFeedbackPage('get_staff_feedback_page', input);
+export async function getStaffFeedbackPage(input: StaffFeedbackFilters): Promise<FeedbackPageResult> {
+  const { data, error } = await supabase.rpc('get_staff_feedback_page', {
+    p_search: input.q,
+    p_status: input.status,
+    p_recipient: input.recipient,
+    p_unread_only: input.unreadOnly,
+    p_page: input.page,
+    p_page_size: input.pageSize,
+  });
+  if (error) throw toAppError(error);
+  return data as unknown as FeedbackPageResult;
+}
 
 export async function updateFeedback(input: {
   id: string;
@@ -86,4 +121,17 @@ export async function updateFeedback(input: {
     p_response: input.response,
   });
   if (error) throw toAppError(error);
+  notifyUnreadChanged();
+}
+
+export async function markMyFeedbackRead(feedbackId: string): Promise<void> {
+  const { error } = await supabase.rpc('mark_my_feedback_read', { p_feedback_id: feedbackId });
+  if (error) throw toAppError(error);
+  notifyUnreadChanged();
+}
+
+export async function markFeedbackRead(feedbackId: string): Promise<void> {
+  const { error } = await supabase.rpc('mark_feedback_read', { p_feedback_id: feedbackId });
+  if (error) throw toAppError(error);
+  notifyUnreadChanged();
 }

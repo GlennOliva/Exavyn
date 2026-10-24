@@ -24,6 +24,10 @@ export const NEAR_PASSING_BAND = 10;
 export interface ClassifyScoreInput {
   percentage: number | null | undefined;
   passThreshold: number | null | undefined;
+  /** Raw awarded points, when available. Preferred for the boundary check. */
+  earnedPoints?: number | null;
+  /** Raw available points, when available. Preferred for the boundary check. */
+  maxPoints?: number | null;
   released?: boolean;
   state?: string | null;
 }
@@ -53,10 +57,21 @@ export function classifyScore(input: ClassifyScoreInput): ScoreClassification {
     };
   }
 
-  // Unrounded comparison, as required. `percentage` is the authoritative
-  // stored value (the database keeps its full precision).
+  // Compare the authoritative unrounded score. The database stores percentage
+  // at two decimals, so when raw points are available we recompute the exact
+  // ratio instead of trusting the display-rounded percentage.
   const threshold = Number(passThreshold);
-  const score = Number(percentage);
+  const earned = Number(input.earnedPoints);
+  const max = Number(input.maxPoints);
+  const hasRawPoints =
+    input.earnedPoints !== null &&
+    input.earnedPoints !== undefined &&
+    input.maxPoints !== null &&
+    input.maxPoints !== undefined;
+  const score =
+    hasRawPoints && Number.isFinite(earned) && Number.isFinite(max) && max > 0
+      ? (earned / max) * 100
+      : Number(percentage);
   if (!Number.isFinite(threshold) || !Number.isFinite(score)) {
     return {
       status: 'neutral',

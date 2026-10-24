@@ -647,8 +647,21 @@ export function ExamPage() {
             <div className="small muted mb-2">
               Progress: {answeredCount}/{questions.length} answered
             </div>
-            <div className="progress-bar mb-2" aria-label="Progress">
+            <div
+              className="progress-bar mb-2"
+              role="progressbar"
+              aria-label="Answered questions"
+              aria-valuemin={0}
+              aria-valuemax={questions.length}
+              aria-valuenow={answeredCount}
+              aria-valuetext={`${answeredCount} of ${questions.length} questions answered`}
+            >
               <div className="progress-bar-fill" style={{ width: `${questions.length ? (answeredCount / questions.length) * 100 : 0}%` }} />
+            </div>
+            <div className="q-stats" role="group" aria-label="Question counts">
+              <span><strong>{answeredCount}</strong> answered</span>
+              <span><strong>{questions.length - answeredCount}</strong> unanswered</span>
+              <span><strong>{bookmarks.size}</strong> marked</span>
             </div>
             <div className="q-grid" aria-label="Question status">
               {questions.map((q, index) => (

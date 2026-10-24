@@ -71,6 +71,8 @@ export function AdminReportsPage() {
           a.percentage ?? '',
           classifyScore({
             percentage: a.percentage,
+            earnedPoints: a.earned_points,
+            maxPoints: a.max_points,
             passThreshold: a.pass_threshold,
             state: a.state,
           }).label,
@@ -152,6 +154,8 @@ export function AdminReportsPage() {
                   ) : null}
                   <ScoreBadge
                     percentage={attempt.percentage}
+                    earnedPoints={attempt.earned_points}
+                    maxPoints={attempt.max_points}
                     passThreshold={attempt.pass_threshold}
                     state={attempt.state}
                   />

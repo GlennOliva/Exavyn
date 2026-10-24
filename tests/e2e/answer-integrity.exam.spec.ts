@@ -58,6 +58,12 @@ test.describe('answer integrity with sequential navigation', () => {
     // Status numbers and the bookmark summary are display-only.
     await expect(page.locator('.q-dot')).toHaveCount(5);
     await expect(page.locator('.q-dot').first()).not.toHaveAttribute('role', 'button');
+    const progress = page.getByRole('progressbar', { name: 'Answered questions' });
+    const counts = page.getByLabel('Question counts');
+    await expect(progress).toHaveAttribute('aria-valuemax', '5');
+    await expect(progress).toHaveAttribute('aria-valuenow', '0');
+    await expect(counts).toContainText('0 answered');
+    await expect(counts).toContainText('5 unanswered');
     await page.locator('.q-dot').nth(4).click();
     await expect(prompt).toHaveText(q1Prompt!);
 
@@ -71,8 +77,12 @@ test.describe('answer integrity with sequential navigation', () => {
     const q1BResponse = await q1BRequest.response();
     expect(q1BResponse?.ok()).toBe(true);
     expect(await q1BResponse?.json()).toMatchObject({ accepted: true, reason: 'saved', revision: 1 });
+    await expect(progress).toHaveAttribute('aria-valuenow', '1');
+    await expect(counts).toContainText('1 answered');
+    await expect(counts).toContainText('4 unanswered');
     await page.getByRole('button', { name: /mark for review/i }).click();
     await expect(page.getByText(/marked questions:/i)).toContainText('1');
+    await expect(counts).toContainText('1 marked');
     await expect(next).toBeEnabled();
     await next.click();
 
@@ -132,10 +142,14 @@ test.describe('answer integrity with sequential navigation', () => {
     await page.getByRole('radio', { name: /choice 1$/i }).check();
     await expect(page.getByRole('button', { name: /clear answer/i })).toBeEnabled();
     await page.getByRole('button', { name: /clear answer/i }).click();
+    await expect(progress).toHaveAttribute('aria-valuenow', '3');
     await expect(next).toBeEnabled();
     await next.click();
 
     await page.getByRole('radio', { name: /choice 1$/i }).check();
+    await expect(progress).toHaveAttribute('aria-valuenow', '4');
+    await expect(counts).toContainText('4 answered');
+    await expect(counts).toContainText('1 unanswered');
     const submit = page.getByRole('button', { name: /^submit exam$/i }).last();
     await expect(submit).toBeEnabled();
     await submit.click();

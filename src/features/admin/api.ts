@@ -181,9 +181,12 @@ export async function listUsersPage(params: {
   const needle = escapePostgrestSearch(params.q);
   let query = supabase
     .from('profiles')
-    // Every account gets a role from the signup trigger, so an inner embed is
-    // safe and lets Postgres filter by role before pagination.
-    .select('*, user_roles!inner(role)', { count: 'exact' });
+    // `user_roles` has two foreign keys to `profiles` (user_id and granted_by),
+    // so the embed must name the relationship explicitly or PostgREST rejects
+    // it as ambiguous (PGRST201). Every account gets a role from the signup
+    // trigger, so an inner embed is safe and lets Postgres filter by role
+    // before pagination.
+    .select('*, user_roles!user_roles_user_id_fkey!inner(role)', { count: 'exact' });
 
   if (params.role !== 'all') query = query.eq('user_roles.role', params.role);
   if (needle) query = query.or(`full_name.ilike.%${needle}%,email.ilike.%${needle}%`);

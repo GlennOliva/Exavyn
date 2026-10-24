@@ -7,6 +7,16 @@ describe('classifyScore', () => {
     expect(classifyScore({ percentage: 79.999, passThreshold: 80 }).status).toBe('near');
   });
 
+  it('maps status to green, yellow, red, and neutral badge tones', () => {
+    expect(classifyScore({ percentage: 80, passThreshold: 80 }).tone).toBe('success');
+    expect(classifyScore({ percentage: 75, passThreshold: 80 }).tone).toBe('warning');
+    expect(classifyScore({ percentage: 69, passThreshold: 80 }).tone).toBe('danger');
+    expect(classifyScore({ percentage: 95, passThreshold: null }).tone).toBe('default');
+    expect(
+      classifyScore({ percentage: 95, passThreshold: 80, released: false }).tone,
+    ).toBe('default');
+  });
+
   it('marks the 10-point band below the threshold as near, never passed', () => {
     expect(NEAR_PASSING_BAND).toBe(10);
     expect(classifyScore({ percentage: 70, passThreshold: 80 }).status).toBe('near');
@@ -15,9 +25,19 @@ describe('classifyScore', () => {
     expect(classifyScore({ percentage: 69.999, passThreshold: 80 }).status).toBe('failed');
   });
 
+  it('uses raw points instead of the display-rounded percentage', () => {
+    expect(
+      classifyScore({ percentage: 65, earnedPoints: 64.996, maxPoints: 100, passThreshold: 75 }).status,
+    ).toBe('failed');
+    expect(
+      classifyScore({ percentage: 65, earnedPoints: 65, maxPoints: 100, passThreshold: 75 }).status,
+    ).toBe('near');
+  });
+
   it('is neutral when no threshold is configured', () => {
     const result = classifyScore({ percentage: 95, passThreshold: null });
     expect(result.status).toBe('neutral');
+    expect(result.tone).toBe('default');
     expect(result.neutralReason).toBe('no-threshold');
     expect(result.label).not.toMatch(/pass/i);
   });

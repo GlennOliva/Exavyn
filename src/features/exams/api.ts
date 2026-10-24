@@ -200,6 +200,7 @@ export async function duplicateExam(examId: string): Promise<string> {
 }
 
 export interface StudentExam extends ExamRow {
+  course?: { title: string; course_code: string } | null;
   course_title?: string;
   course_code?: string;
 }

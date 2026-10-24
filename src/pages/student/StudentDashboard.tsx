@@ -236,6 +236,8 @@ export function StudentDashboard() {
                       ) : null}
                       <ScoreBadge
                         percentage={row.percentage}
+                        earnedPoints={row.earned_points}
+                        maxPoints={row.max_points}
                         passThreshold={row.pass_threshold}
                         state={row.state}
                         released={row.released}

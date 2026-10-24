@@ -7,14 +7,15 @@ steps here prove the database-enforced security model, the authenticated exam
 workflow, and the concurrency/finality guarantees.
 
 > Status: **executed** against the dedicated hosted test project
-> `tddmtdhhckykwnoydvjc`. Re-verified live on 2026-10-24:
+> `tddmtdhhckykwnoydvjc`. Re-verified live on 2026-10-25:
 > RLS **36/36**, workflow **65/65**, concurrency **5/5**, finality **10/10**,
-> feedback **6/6** (hosted total **122/122**), unit **118/118**, browser
-> **33 passed / 9 skipped / 0 failed**, plus the dedicated answer-integrity
-> scenario **1/1 passed locally and 1/1 passed against production**, and
-> typecheck/lint/build clean. The corrected frontend is deployed at
-> `https://exavyn.vercel.app` (production asset `index-CCj1TNHp.js`).
-> Forward migrations `0013`-`0024` are applied and recorded. Email confirmation was then
+> feedback **18/18** (hosted total **134/134**), unit **121/121**, public/smoke
+> browser **33 passed / 9 skipped / 0 failed**, plus dedicated sidebar/admin
+> **4/4**, authenticated theme **2/2**, feedback UI **3/3**, and answer-integrity
+> **1/1** (local and production), and typecheck/lint/build clean. The V2 frontend
+> is deployed at `https://exavyn.vercel.app` (production assets
+> `index-B9zquRSL.js` / `index-WtXLvfJy.css`).
+> Forward migrations `0013`-`0025` are applied and recorded. Email confirmation was then
 > **disabled** on the hosted project (scoped `config push`), so public sign-up
 > returns a live session and is not gated by the email sender; a fresh anon-key
 > signup was verified live and the probe account deleted. See §10 for counts and
@@ -583,16 +584,19 @@ Immutable leftovers:         <count from manifest>
 
 ## 10. Verification results (this workspace)
 
-Re-verified live on **2026-10-24** against `tddmtdhhckykwnoydvjc` with the full
+Re-verified live on **2026-10-25** against `tddmtdhhckykwnoydvjc` with the full
 server environment present (`.env.server.local`).
 
 ```
 Environment: hosted test project tddmtdhhckykwnoydvjc   Node 24.14.0
-Local checks (offline):  typecheck PASS, lint PASS, unit 118/118, build PASS,
+Local checks (offline):  typecheck PASS, lint PASS, unit 121/121, build PASS,
                          e2e 33 passed / 9 skipped / 0 failed
                          (Chromium + Firefox; public + registration + branding/
                          theme run always, authenticated/admin specs skip unless
                          E2E_* creds)
+Dedicated browser specs: sidebar/admin 4/4, theme 2/2, feedback 3/3,
+                         answer integrity 1/1; all green locally and against
+                         https://exavyn.vercel.app
 
 Hosted checks (this session): `npm run test:hosted` exit 0
   rls                    36/36   PASS   (real user tokens; anon key only;
@@ -633,8 +637,17 @@ Hosted checks (this session): `npm run test:hosted` exit 0
                                          no user-facing rewrite/delete of final
                                          fields, post-finalize answer/violation
                                           no-ops, deadline precedence)
-  feedback                6/6    PASS   (deduplication, own history, owner-
-                                          teacher/admin scope, private notes)
+  feedback                18/18  PASS   (idempotent request ids + duplicate
+                                          window, server-side recipient
+                                          resolution, own history, owner-teacher/
+                                          admin scope, admin-only isolation,
+                                          direct-table denial, cross-teacher and
+                                          cross-student denial, private notes vs
+                                          response, two-way unread/mark-read,
+                                          recipient filter, length limits,
+                                          draft-exam rejection, no key leakage,
+                                          unenrolled rejection, suspended staff,
+                                          admin global access)
 
 Authenticated UI e2e (isolated fixture; Chromium, headed):
   3/3                     PASS   dedicated teacher + student + fresh exam,
@@ -653,6 +666,24 @@ Themed authenticated e2e (isolated fixture; Chromium): 2/2 PASS
                                  the choice persisting across reload (no console
                                  errors), and the chosen theme carrying into the
                                  exam instructions page.
+
+Sidebar/admin e2e (isolated fixture; Chromium): 4/4 PASS
+                                 /admin/users role embed without PGRST201,
+                                 desktop hamburger hide/show without horizontal
+                                 overflow or tagline, mobile drawer Escape/
+                                 backdrop/focus-trap/focus-restore/inert, student
+                                 nav order, and Appearance under Profile.
+
+Feedback UI e2e (isolated fixture; Chromium, production): 3/3 PASS
+                                 student -> course teacher routing, admin reply
+                                 + private note, student sees reply but never the
+                                 private note, and "Mark response as read"
+                                 clears the unread badge.
+
+Answer-integrity e2e (isolated fixture; Chromium, local + production): 1/1 PASS
+                                 B -> C, delayed save, explicit clear, reload,
+                                 exact graded review, and answered/unanswered/
+                                 marked progress counters.
 
 Registration smoke e2e (Chromium + Firefox): 4/4 PASS
                                  double submit -> exactly one /auth/v1/signup
@@ -694,7 +725,7 @@ Preceding this session (user tokens only):
   CLI / secrets           PASS   (`secrets list` names, digests only)
 
 Migrations:
-  migration history       PASS    forward migrations through 2026010100024
+  migration history       PASS    forward migrations through 2026010100025
                                   applied without reset and recorded in
                                   supabase_migrations.schema_migrations.
 
@@ -712,6 +743,46 @@ Failed:                  none
 Immutable leftovers:     expected (published versions / finalized attempts /
                          violation events cannot be deleted by design)
 ```
+
+### V2 shell, feedback routing, progress, and exact-point scoring (2026-10-25)
+
+- **Migration `2026010100025_feedback_recipients_unread.sql`** (applied via
+  `db push --db-url`, no reset): adds `recipient_type` /
+  `recipient_teacher_id`, `student_read_at`, `staff_read_at`,
+  `response_updated_at`, and unread partial indexes; backfills course-linked
+  feedback to the course owner; replaces `submit_feedback` (9 args) and
+  `get_staff_feedback_page` (6 args); hardens `update_feedback`,
+  `mark_my_feedback_read`, `mark_feedback_read`, and
+  `get_feedback_unread_counts`; and closes the suspended-account hole in the
+  legacy `get_feedback_summary`. Recipients are resolved server-side, linked
+  exams must be published/visible, notes and responses are limited to 5000
+  characters, and every definer function calls `app.require_user()`.
+- **Admin users directory:** the ambiguous `profiles` → `user_roles` embed is
+  now named explicitly (`user_roles!user_roles_user_id_fkey!inner(role)`),
+  fixing PGRST201 while preserving server-side role filtering before pagination.
+  Verified through `/admin/users` in the browser and by the dedicated e2e.
+- **Shell:** inline-SVG hamburger with `aria-expanded`/`aria-controls`, persisted
+  desktop collapse (`exavyn.sidebar.collapsed`), mobile overlay drawer with
+  focus trap, Escape/backdrop close, `inert`/dialog semantics, focus restore,
+  nav-close focus handoff to `<main tabIndex={-1}>`, scrollable sidebar, and
+  unread Feedback badge. Authenticated chrome omits the public tagline and keeps
+  the white logo backing on dark surfaces.
+- **Appearance:** theme controls moved from the header into
+  Profile → Settings → Appearance for every role, with the existing
+  Light/Dark/System persistence and live OS subscription.
+- **Feedback UI:** explicit Administration vs Course teacher recipient,
+  authorized enrollment/exam selectors with no raw UUID entry, duplicate-click
+  request-id reuse, post-exam defaults, private staff notes separate from the
+  student-visible response, unread badges/counters both ways, and
+  pagination/search/filters. Hosted feedback suite grew from 6 to **18**
+  checks; the new production UI spec covers submit → reply → read.
+- **Exam progress:** `role="progressbar"` with min/max/now/valuetext and
+  answered/unanswered/marked counters; covered by the answer-integrity e2e.
+- **Exact-point score classification:** `classifyScore` prefers raw
+  `earned/max` points when available (the database stores percentage at two
+  decimals), maps green ≥ threshold, yellow within 10pp below, red >10pp below,
+  and stays neutral when threshold/score is missing or withheld. Unit count is
+  now **121/121**.
 
 ### Fixes made while re-running (this session)
 
@@ -806,9 +877,10 @@ The same scenario was rerun against the public production alias after promoting
 the verified Vercel preview: **1/1 passed**. The trace asserts distinct request
 UUIDs for B and C, revisions 1 and 2, accepted RPC responses, the final C option
 UUID in `attempt_answers`, the matching grading input, and the matching
-`get_attempt_review` payload. Production serves `index-CCj1TNHp.js`; the
-previous deployment served `index-DsrZm_K0.js` and still contained the original
-request-ID reuse and direct question-jump behavior.
+`get_attempt_review` payload. The V2 deployment serves `index-B9zquRSL.js` /
+`index-WtXLvfJy.css`; the earlier deployment served `index-CCj1TNHp.js`, and the
+original defect before that served `index-DsrZm_K0.js` with request-ID reuse and
+direct question-jump behavior.
 
 Read-only historical audit snapshot before the final verification fixtures:
 483 attempts and 6,043 answer rows overall. Excluding generated E2E exams, one

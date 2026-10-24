@@ -27,6 +27,7 @@ export type MultiAttemptPolicy = 'latest' | 'highest';
 export type AnswerReviewPolicy = 'immediate' | 'after_attempts' | 'after_close' | 'never' | 'scheduled';
 export type FeedbackCategory = 'bug' | 'suggestion' | 'exam_concern' | 'other';
 export type FeedbackStatus = 'new' | 'in_review' | 'resolved';
+export type FeedbackRecipient = 'administration' | 'course_teacher';
 
 export type ProfileRow = {
   id: string;
@@ -241,6 +242,11 @@ export type FeedbackRow = {
   status: FeedbackStatus;
   staff_notes: string | null;
   response: string | null;
+  recipient_type: FeedbackRecipient;
+  recipient_teacher_id: string | null;
+  student_read_at: string | null;
+  staff_read_at: string | null;
+  response_updated_at: string | null;
   request_id: string;
   created_at: string;
   updated_at: string;
@@ -405,13 +411,27 @@ export type Database = {
           p_course_id?: string | null;
           p_exam_id?: string | null;
           p_question_id?: string | null;
+          p_recipient_type?: FeedbackRecipient;
           p_request_id?: string;
         };
         Returns: string;
       };
       get_my_feedback_page: { Args: { p_search?: string; p_status?: string; p_page?: number; p_page_size?: number }; Returns: Json };
-      get_staff_feedback_page: { Args: { p_search?: string; p_status?: string; p_page?: number; p_page_size?: number }; Returns: Json };
+      get_staff_feedback_page: {
+        Args: {
+          p_search?: string;
+          p_status?: string;
+          p_recipient?: string;
+          p_unread_only?: boolean;
+          p_page?: number;
+          p_page_size?: number;
+        };
+        Returns: Json;
+      };
       update_feedback: { Args: { p_feedback_id: string; p_status: string; p_staff_notes: string; p_response: string }; Returns: undefined };
+      mark_my_feedback_read: { Args: { p_feedback_id: string }; Returns: undefined };
+      mark_feedback_read: { Args: { p_feedback_id: string }; Returns: undefined };
+      get_feedback_unread_counts: { Args: Record<string, never>; Returns: Json };
       get_feedback_summary: { Args: { p_exam_id: string }; Returns: Json };
       recompute_answered_count: { Args: { p_attempt_id: string }; Returns: number };
     };

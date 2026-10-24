@@ -72,6 +72,8 @@ export function ResultPage() {
             <p className="mt-2">
               <ScoreBadge
                 percentage={data.percentage}
+                earnedPoints={data.earned_points}
+                maxPoints={data.max_points}
                 passThreshold={data.pass_threshold}
                 state={data.attempt_state}
                 released={data.released}

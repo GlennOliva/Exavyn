@@ -64,6 +64,8 @@ export function AttemptDetailPage() {
           <p className="mt-2">
             <ScoreBadge
               percentage={r.percentage}
+              earnedPoints={r.earned_points}
+              maxPoints={r.max_points}
               passThreshold={r.pass_threshold}
               state={r.attempt_state}
             />{' '}

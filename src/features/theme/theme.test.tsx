@@ -141,4 +141,10 @@ describe('Brand', () => {
     expect(screen.getByAltText('Exavyn')).toBeInTheDocument();
     expect(screen.getByText('Focused exams. Clear results.')).toBeInTheDocument();
   });
+
+  it('can omit the tagline for authenticated application chrome', () => {
+    render(<Brand showTagline={false} />);
+    expect(screen.getByAltText('Exavyn')).toBeInTheDocument();
+    expect(screen.queryByText('Focused exams. Clear results.')).toBeNull();
+  });
 });

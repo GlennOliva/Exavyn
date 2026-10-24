@@ -75,6 +75,8 @@ export function HistoryPage() {
                       ) : null}
                       <ScoreBadge
                         percentage={attempt.percentage}
+                        earnedPoints={attempt.earned_points}
+                        maxPoints={attempt.max_points}
                         passThreshold={attempt.pass_threshold}
                         state={attempt.state}
                         released={attempt.released}
@@ -83,6 +85,8 @@ export function HistoryPage() {
                   ) : (
                     <ScoreBadge
                       percentage={attempt.percentage}
+                      earnedPoints={attempt.earned_points}
+                      maxPoints={attempt.max_points}
                       passThreshold={attempt.pass_threshold}
                       state={attempt.state}
                       released={attempt.released}
