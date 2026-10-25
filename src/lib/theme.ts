@@ -14,11 +14,29 @@
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
+/**
+ * Public account screens always use the dark Cyber-Tribal surface. The
+ * authenticated application keeps the user's saved light/dark/system choice.
+ */
+export type ThemeSurface = 'public' | 'app';
 
 /** Must match the key used by the no-flash inline script in `index.html`. */
 export const THEME_STORAGE_KEY = 'exavyn.theme';
 
 export const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system'];
+
+/** Paths rendered with the fixed dark public surface, kept in sync with index.html. */
+export const PUBLIC_AUTH_PATHS = [
+  '/login',
+  '/register',
+  '/forgot-password',
+  '/update-password',
+] as const;
+
+export function isPublicAuthPath(pathname: string): boolean {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  return (PUBLIC_AUTH_PATHS as readonly string[]).includes(normalized);
+}
 
 export function isThemeMode(value: unknown): value is ThemeMode {
   return value === 'light' || value === 'dark' || value === 'system';
@@ -57,13 +75,20 @@ export function storeTheme(mode: ThemeMode): void {
   }
 }
 
-/** Write the resolved theme to the document root. Returns what was applied. */
-export function applyTheme(mode: ThemeMode): ResolvedTheme {
-  const resolved = resolveTheme(mode);
+/**
+ * Write the resolved surface/theme to the document root. Public auth pages are
+ * forced to the dark surface without touching the saved preference. Returns the
+ * theme that was actually applied.
+ */
+export function applyTheme(mode: ThemeMode, surface: ThemeSurface = 'app'): ResolvedTheme {
+  const resolved: ResolvedTheme = surface === 'public' ? 'dark' : resolveTheme(mode);
   if (typeof document !== 'undefined') {
     const root = document.documentElement;
     root.setAttribute('data-theme', resolved);
+    root.setAttribute('data-surface', surface);
     root.style.colorScheme = resolved;
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (meta) meta.content = resolved === 'dark' ? '#080B14' : '#F2F5F7';
   }
   return resolved;
 }

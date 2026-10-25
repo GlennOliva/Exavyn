@@ -1,114 +1,99 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Exavyn branding + light/dark theme checks. These run on the public pages and
- * need no backend: they assert the title/logo/tagline, the theme control, theme
- * persistence across reload, live System behaviour, and that the layout works
- * on desktop and mobile viewports. No Supabase credentials are required.
+ * Public branding and surface checks. Public account screens always use the
+ * dark Cyber-Tribal surface, expose no appearance controls, and must never
+ * overwrite a signed-in user's saved theme preference. No backend is required.
  */
 
 const STORAGE_KEY = 'exavyn.theme';
+const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/update-password'];
+
+async function surface(page: Page): Promise<string | null> {
+  return page.evaluate(() => document.documentElement.getAttribute('data-surface'));
+}
 
 async function resolvedTheme(page: Page): Promise<string | null> {
   return page.evaluate(() => document.documentElement.getAttribute('data-theme'));
 }
 
-test.describe('Exavyn branding and themes', () => {
-  test('browser title and logo reflect Exavyn', async ({ page }) => {
+test.describe('Exavyn public branding', () => {
+  test('browser title and logo reflect Exavyn without the old slogan', async ({ page }) => {
     await page.goto('/login');
     await expect(page).toHaveTitle(/Exavyn/);
     await expect(page.getByAltText('Exavyn')).toBeVisible();
-    await expect(page.getByText('Focused exams. Clear results.')).toBeVisible();
+    await expect(page.getByText('Focused exams. Clear results.')).toHaveCount(0);
 
     const expected = process.env.VITE_APP_NAME ?? 'Exavyn';
     await expect(page).toHaveTitle(new RegExp(expected));
   });
 
-  test('theme control offers Light, Dark, and System and defaults to the OS preference', async ({
-    page,
-  }) => {
-    await page.emulateMedia({ colorScheme: 'dark' });
-    await page.goto('/login');
-
-    // No explicit light/dark choice stored -> System, resolved to the OS preference.
-    const stored = await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY);
-    expect(stored === null || stored === 'system').toBe(true);
-    await expect(page.getByRole('group', { name: 'Color theme' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'System' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(await resolvedTheme(page)).toBe('dark');
+  test('all public account pages are fixed-dark with no appearance controls', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    for (const path of PUBLIC_PATHS) {
+      await page.goto(path);
+      expect(await surface(page)).toBe('public');
+      expect(await resolvedTheme(page)).toBe('dark');
+      await expect(page.getByRole('group', { name: 'Color theme' })).toHaveCount(0);
+    }
   });
 
-  test('an explicit choice is applied and persists across reload', async ({ page }) => {
-    await page.goto('/login');
-    await page.getByRole('button', { name: 'Dark' }).click();
-    expect(await resolvedTheme(page)).toBe('dark');
-
-    await page.reload();
-    expect(await resolvedTheme(page)).toBe('dark');
-    await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
+  test('a saved light preference is not applied, changed, or persisted from login', async ({
+    page,
+  }) => {
+    await page.addInitScript(
+      ([key, value]) => window.localStorage.setItem(key, value),
+      [STORAGE_KEY, 'light'],
     );
-    // Applied before React: the root attribute is already dark immediately.
+    await page.goto('/login');
+
+    expect(await surface(page)).toBe('public');
+    expect(await resolvedTheme(page)).toBe('dark');
+    expect(await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).toBe('light');
+
+    await page.getByRole('link', { name: /create a student account/i }).click();
+    await expect(page).toHaveURL(/\/register$/);
+    expect(await surface(page)).toBe('public');
+    expect(await resolvedTheme(page)).toBe('dark');
+    expect(await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).toBe('light');
+  });
+
+  test('the public surface is applied before React paints', async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem('exavyn.theme', 'light'));
+    await page.goto('/login');
+    expect(await page.evaluate(() => document.documentElement.getAttribute('data-surface'))).toBe(
+      'public',
+    );
     expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe(
       'dark',
     );
   });
 
-  test('System follows live operating-system changes', async ({ page }) => {
-    await page.emulateMedia({ colorScheme: 'light' });
+  test('the public story is present on desktop and removed on small screens', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/login');
-    await page.getByRole('button', { name: 'System' }).click();
-    expect(await resolvedTheme(page)).toBe('light');
+    await expect(page.getByText('Built into every session.')).toBeVisible();
 
-    await page.emulateMedia({ colorScheme: 'dark' });
-    await expect.poll(() => resolvedTheme(page)).toBe('dark');
-
-    await page.emulateMedia({ colorScheme: 'light' });
-    await expect.poll(() => resolvedTheme(page)).toBe('light');
-  });
-
-  test('the theme preference survives client-side navigation', async ({ page }) => {
-    await page.goto('/login');
-    await page.getByRole('button', { name: 'Dark' }).click();
-    await page.getByRole('link', { name: /create a student account/i }).click();
-    await expect(page).toHaveURL(/\/register$/);
-    expect(await resolvedTheme(page)).toBe('dark');
-  });
-
-  test('theme toggle is keyboard operable', async ({ page }) => {
-    await page.goto('/login');
-    const light = page.getByRole('button', { name: 'Light' });
-    await light.focus();
-    await expect(light).toBeFocused();
-    await page.keyboard.press('Enter');
-    expect(await resolvedTheme(page)).toBe('light');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByText('Built into every session.')).toBeHidden();
   });
 });
 
-test.describe('Exavyn mobile layout', () => {
+test.describe('Exavyn public mobile layout', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('branding and theme control remain usable in both themes', async ({ page }) => {
+  test('branding and the sign-in form fit without horizontal overflow', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByAltText('Exavyn')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Color theme' })).toHaveCount(0);
 
-    const toggle = page.getByRole('group', { name: 'Color theme' });
-    await expect(toggle).toBeVisible();
-
-    await page.getByRole('button', { name: 'Dark' }).click();
-    expect(await resolvedTheme(page)).toBe('dark');
-    // The wordmark stays inside the viewport (no horizontal overflow).
     const box = await page.getByAltText('Exavyn').boundingBox();
     expect(box).not.toBeNull();
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(390);
-
-    await page.getByRole('button', { name: 'Light' }).click();
-    expect(await resolvedTheme(page)).toBe('light');
-    await expect(toggle).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
   });
 });

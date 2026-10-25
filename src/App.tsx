@@ -1,6 +1,7 @@
 import { Link, createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AuthProvider } from './features/auth/AuthContext';
 import { ThemeProvider } from './features/theme/ThemeContext';
+import { ThemeSurface } from './features/theme/ThemeSurface';
 import { AppShell } from './components/layout/AppShell';
 import { RequireAuth, RequireRole, RoleHomeRedirect } from './components/guards';
 import { EmptyState } from './components/ui';
@@ -51,73 +52,78 @@ function NotFound() {
 // A data router is required so the exam interface can use useBlocker to guard
 // in-attempt navigation (SOP req 119 / acceptance 13).
 const router = createBrowserRouter([
-  // Public
-  { path: '/login', element: <LoginPage /> },
-  { path: '/register', element: <RegisterPage /> },
-  { path: '/forgot-password', element: <ForgotPasswordPage /> },
-  { path: '/update-password', element: <UpdatePasswordPage /> },
-
-  // Fullscreen exam interface — no application chrome
   {
-    element: <RequireAuth />,
+    element: <ThemeSurface />,
     children: [
-      {
-        element: <RequireRole roles={['student']} />,
-        children: [{ path: '/student/exams/:examId/take', element: <ExamPage /> }],
-      },
-    ],
-  },
+      // Public
+      { path: '/login', element: <LoginPage /> },
+      { path: '/register', element: <RegisterPage /> },
+      { path: '/forgot-password', element: <ForgotPasswordPage /> },
+      { path: '/update-password', element: <UpdatePasswordPage /> },
 
-  // Authenticated application shell
-  {
-    element: <RequireAuth />,
-    children: [
+      // Fullscreen exam interface — no application chrome
       {
-        element: <AppShell />,
+        element: <RequireAuth />,
         children: [
-          { index: true, element: <RoleHomeRedirect /> },
-          { path: '/profile', element: <ProfilePage /> },
-          { path: '/feedback', element: <FeedbackPage /> },
-
-          {
-            element: <RequireRole roles={['admin']} />,
-            children: [
-              { path: '/admin', element: <AdminDashboard /> },
-              { path: '/admin/users', element: <AdminUsersPage /> },
-              { path: '/admin/courses', element: <AdminCoursesPage /> },
-              { path: '/admin/exams', element: <AdminExamsPage /> },
-              { path: '/admin/reports', element: <AdminReportsPage /> },
-              { path: '/admin/audit', element: <AdminAuditPage /> },
-            ],
-          },
-
-          {
-            element: <RequireRole roles={['teacher']} />,
-            children: [
-              { path: '/teacher', element: <TeacherDashboard /> },
-              { path: '/teacher/courses', element: <TeacherCoursesPage /> },
-              { path: '/teacher/courses/:courseId', element: <TeacherCourseDetailPage /> },
-              { path: '/teacher/exams/new', element: <ExamBuilderPage /> },
-              { path: '/teacher/exams/:examId/edit', element: <ExamBuilderPage /> },
-              { path: '/teacher/exams/:examId/results', element: <ExamResultsPage /> },
-              { path: '/teacher/attempts/:attemptId', element: <AttemptDetailPage /> },
-            ],
-          },
-
           {
             element: <RequireRole roles={['student']} />,
+            children: [{ path: '/student/exams/:examId/take', element: <ExamPage /> }],
+          },
+        ],
+      },
+
+      // Authenticated application shell
+      {
+        element: <RequireAuth />,
+        children: [
+          {
+            element: <AppShell />,
             children: [
-              { path: '/student', element: <StudentDashboard /> },
-              { path: '/student/join', element: <JoinCoursePage /> },
-              { path: '/student/courses/:courseId', element: <StudentCoursePage /> },
-              { path: '/student/exams/:examId', element: <ExamInstructionsPage /> },
-              { path: '/student/attempts/:attemptId/result', element: <ResultPage /> },
-              { path: '/student/attempts/:attemptId/review', element: <AttemptReviewPage /> },
-              { path: '/student/history', element: <HistoryPage /> },
+              { index: true, element: <RoleHomeRedirect /> },
+              { path: '/profile', element: <ProfilePage /> },
+              { path: '/feedback', element: <FeedbackPage /> },
+
+              {
+                element: <RequireRole roles={['admin']} />,
+                children: [
+                  { path: '/admin', element: <AdminDashboard /> },
+                  { path: '/admin/users', element: <AdminUsersPage /> },
+                  { path: '/admin/courses', element: <AdminCoursesPage /> },
+                  { path: '/admin/exams', element: <AdminExamsPage /> },
+                  { path: '/admin/reports', element: <AdminReportsPage /> },
+                  { path: '/admin/audit', element: <AdminAuditPage /> },
+                ],
+              },
+
+              {
+                element: <RequireRole roles={['teacher']} />,
+                children: [
+                  { path: '/teacher', element: <TeacherDashboard /> },
+                  { path: '/teacher/courses', element: <TeacherCoursesPage /> },
+                  { path: '/teacher/courses/:courseId', element: <TeacherCourseDetailPage /> },
+                  { path: '/teacher/exams/new', element: <ExamBuilderPage /> },
+                  { path: '/teacher/exams/:examId/edit', element: <ExamBuilderPage /> },
+                  { path: '/teacher/exams/:examId/results', element: <ExamResultsPage /> },
+                  { path: '/teacher/attempts/:attemptId', element: <AttemptDetailPage /> },
+                ],
+              },
+
+              {
+                element: <RequireRole roles={['student']} />,
+                children: [
+                  { path: '/student', element: <StudentDashboard /> },
+                  { path: '/student/join', element: <JoinCoursePage /> },
+                  { path: '/student/courses/:courseId', element: <StudentCoursePage /> },
+                  { path: '/student/exams/:examId', element: <ExamInstructionsPage /> },
+                  { path: '/student/attempts/:attemptId/result', element: <ResultPage /> },
+                  { path: '/student/attempts/:attemptId/review', element: <AttemptReviewPage /> },
+                  { path: '/student/history', element: <HistoryPage /> },
+                ],
+              },
+
+              { path: '*', element: <NotFound /> },
             ],
           },
-
-          { path: '*', element: <NotFound /> },
         ],
       },
     ],

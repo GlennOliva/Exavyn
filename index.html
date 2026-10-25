@@ -6,19 +6,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta
       name="description"
-      content="Exavyn — focused exams, clear results. Fullscreen-monitored exams with an automatic violation policy and immutable final scores."
+      content="Exavyn is a secure assessment platform with monitored exam sessions, server-verified answers, and controlled result release."
     />
     <meta name="application-name" content="Exavyn" />
     <meta name="apple-mobile-web-app-title" content="Exavyn" />
-    <meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
-    <title>Exavyn — Focused exams. Clear results.</title>
+    <meta name="theme-color" content="#080B14" />
+    <title>Exavyn — Secure assessment platform</title>
     <script>
-      // Apply the saved (or system) theme before first paint to avoid a flash
-      // of the wrong theme. Keep the storage key in sync with
-      // src/lib/theme.ts (THEME_STORAGE_KEY).
+      // Apply the correct surface before first paint. Public auth screens are
+      // always dark and must not read, change, or persist the signed-in theme
+      // preference. Keep the paths and storage key in sync with src/lib/theme.ts.
       (function () {
         try {
+          var root = document.documentElement;
+          var path = window.location.pathname.replace(/\/+$/, '') || '/';
+          var isPublic =
+            path === '/login' ||
+            path === '/register' ||
+            path === '/forgot-password' ||
+            path === '/update-password';
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (isPublic) {
+            root.setAttribute('data-theme', 'dark');
+            root.setAttribute('data-surface', 'public');
+            root.style.colorScheme = 'dark';
+            if (meta) meta.setAttribute('content', '#080B14');
+            return;
+          }
           var stored = window.localStorage.getItem('exavyn.theme');
           var mode =
             stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
@@ -28,9 +42,10 @@
                 ? 'dark'
                 : 'light'
               : mode;
-          var root = document.documentElement;
           root.setAttribute('data-theme', resolved);
+          root.setAttribute('data-surface', 'app');
           root.style.colorScheme = resolved;
+          if (meta) meta.setAttribute('content', resolved === 'dark' ? '#080B14' : '#F2F5F7');
         } catch (error) {
           /* fall back to the light defaults baked into the stylesheet */
         }

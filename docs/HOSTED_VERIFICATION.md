@@ -9,12 +9,13 @@ workflow, and the concurrency/finality guarantees.
 > Status: **executed** against the dedicated hosted test project
 > `tddmtdhhckykwnoydvjc`. Re-verified live on 2026-10-25:
 > RLS **36/36**, workflow **65/65**, concurrency **5/5**, finality **10/10**,
-> feedback **18/18** (hosted total **134/134**), unit **121/121**, public/smoke
-> browser **33 passed / 9 skipped / 0 failed**, plus dedicated sidebar/admin
-> **4/4**, authenticated theme **2/2**, feedback UI **3/3**, and answer-integrity
-> **1/1** (local and production), and typecheck/lint/build clean. The V2 frontend
-> is deployed at `https://exavyn.vercel.app` (production assets
-> `index-B9zquRSL.js` / `index-WtXLvfJy.css`).
+> feedback **18/18** (hosted total **134/134**), unit **124/124**, Chromium
+> **26 passed / 1 skipped**, Firefox public smoke **12/12**, plus dedicated
+> sidebar/admin **4/4**, authenticated theme **2/2**, feedback UI **3/3**, and
+> answer-integrity **1/1**, and typecheck/lint/build clean. The Cyber-Tribal
+> frontend is deployed at `https://exavyn.vercel.app` (production assets
+> `index-Cyby463L.js` / `index-DqhDLp1g.css`); production public smoke is
+> **10/10** and authenticated shell/theme/feedback smoke is **9/9**.
 > Forward migrations `0013`-`0025` are applied and recorded. Email confirmation was then
 > **disabled** on the hosted project (scoped `config push`), so public sign-up
 > returns a live session and is not gated by the email sender; a fresh anon-key
@@ -589,14 +590,14 @@ server environment present (`.env.server.local`).
 
 ```
 Environment: hosted test project tddmtdhhckykwnoydvjc   Node 24.14.0
-Local checks (offline):  typecheck PASS, lint PASS, unit 121/121, build PASS,
-                         e2e 33 passed / 9 skipped / 0 failed
-                         (Chromium + Firefox; public + registration + branding/
-                         theme run always, authenticated/admin specs skip unless
-                         E2E_* creds)
+Local checks (offline):  typecheck PASS, lint PASS, unit 124/124, build PASS,
+                         Chromium 26 passed / 1 skipped; Firefox public smoke
+                         12/12 (public + registration + branding run without
+                         credentials; authenticated/admin specs use E2E_* creds)
 Dedicated browser specs: sidebar/admin 4/4, theme 2/2, feedback 3/3,
                          answer integrity 1/1; all green locally and against
                          https://exavyn.vercel.app
+Production smoke:        public 10/10, authenticated shell/theme/feedback 9/9
 
 Hosted checks (this session): `npm run test:hosted` exit 0
   rls                    36/36   PASS   (real user tokens; anon key only;
@@ -662,10 +663,11 @@ Admin route e2e (Chromium): 2/2 PASS  admin@exam.test sign-in -> /admin, and
                                  the bootstrap-provisioned admin will use).
 
 Themed authenticated e2e (isolated fixture; Chromium): 2/2 PASS
-                                 dashboard brand + Light/Dark/System control with
-                                 the choice persisting across reload (no console
+                                 Appearance only under Profile -> Settings,
+                                 choice persisting across reload (no console
                                  errors), and the chosen theme carrying into the
-                                 exam instructions page.
+                                 exam instructions page. Public auth pages are
+                                 fixed dark with no appearance controls.
 
 Sidebar/admin e2e (isolated fixture; Chromium): 4/4 PASS
                                  /admin/users role embed without PGRST201,
@@ -769,7 +771,16 @@ Immutable leftovers:     expected (published versions / finalized attempts /
   the white logo backing on dark surfaces.
 - **Appearance:** theme controls moved from the header into
   Profile → Settings → Appearance for every role, with the existing
-  Light/Dark/System persistence and live OS subscription.
+  Light/Dark/System persistence and live OS subscription. Public account screens
+  are fixed-dark via `data-surface="public"` and never read, write, or persist
+  `exavyn.theme`.
+- **Cyber-Tribal visual system:** original local SVG/CSS artwork, Space Grotesk
+  display type (reported substitute for the unavailable Azonix asset), JetBrains
+  Mono for technical values, off-white authenticated light surfaces, accessible
+  functional tokens, contained table scrolling, matched skeleton loaders, and
+  reduced-motion handling. The active exam remains quiet with no sidebar,
+  appearance controls, or decorative animation. Production screenshots were
+  captured for login, student dashboard, settings, and an active exam.
 - **Feedback UI:** explicit Administration vs Course teacher recipient,
   authorized enrollment/exam selectors with no raw UUID entry, duplicate-click
   request-id reuse, post-exam defaults, private staff notes separate from the
@@ -782,7 +793,7 @@ Immutable leftovers:     expected (published versions / finalized attempts /
   `earned/max` points when available (the database stores percentage at two
   decimals), maps green ≥ threshold, yellow within 10pp below, red >10pp below,
   and stays neutral when threshold/score is missing or withheld. Unit count is
-  now **121/121**.
+  now **124/124**.
 
 ### Fixes made while re-running (this session)
 
@@ -877,10 +888,14 @@ The same scenario was rerun against the public production alias after promoting
 the verified Vercel preview: **1/1 passed**. The trace asserts distinct request
 UUIDs for B and C, revisions 1 and 2, accepted RPC responses, the final C option
 UUID in `attempt_answers`, the matching grading input, and the matching
-`get_attempt_review` payload. The V2 deployment serves `index-B9zquRSL.js` /
-`index-WtXLvfJy.css`; the earlier deployment served `index-CCj1TNHp.js`, and the
-original defect before that served `index-DsrZm_K0.js` with request-ID reuse and
-direct question-jump behavior.
+`get_attempt_review` payload. That proof ran on the previous V2 deployment
+(`index-B9zquRSL.js` / `index-WtXLvfJy.css`). The current Cyber-Tribal deployment
+serves `index-Cyby463L.js` / `index-DqhDLp1g.css`; the redesign changed no
+attempt, auth, or answer-integrity code, and production public **10/10** plus
+authenticated shell/theme/feedback **9/9** were rerun against the current assets.
+The earlier V2 deployment served `index-CCj1TNHp.js`, and the original defect
+before that served `index-DsrZm_K0.js` with request-ID reuse and direct
+question-jump behavior.
 
 Read-only historical audit snapshot before the final verification fixtures:
 483 attempts and 6,043 answer rows overall. Excluding generated E2E exams, one
