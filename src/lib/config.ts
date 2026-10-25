@@ -21,9 +21,6 @@ export const isSupabaseConfigured = Boolean(
 
 export const appName = (import.meta.env.VITE_APP_NAME as string | undefined) ?? 'Exavyn';
 
-/** Product tagline, used alongside the wordmark. */
-export const appTagline = 'Focused exams. Clear results.';
-
 /** Fixed for this project per the specification. */
 export const VIOLATION_THRESHOLD = 2;
 

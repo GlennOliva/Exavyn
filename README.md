@@ -1,4 +1,4 @@
-# Exavyn — Focused exams. Clear results.
+# Exavyn — Secure assessment platform
 
 A full-stack, role-based proctored examination platform. Teachers author
 50-item MCQ exams, publish them only to approved, enrolled students, and the
@@ -285,26 +285,45 @@ Then, in the browser:
 
 ## Branding and themes
 
-The app ships as **Exavyn** (tagline *"Focused exams. Clear results."*). The
-display name resolves from `appName` in `src/lib/config.ts` (`'Exavyn'` by
-default; override with `VITE_APP_NAME` in `.env.local`). The wordmark lives at
-`src/assets/logo_exavyn.png` and is reused as the favicon at
-`public/logo_exavyn.png` (no dedicated favicon file was supplied).
+The app ships as **Exavyn**. The display name resolves from `appName` in
+`src/lib/config.ts` (`'Exavyn'` by default; override with `VITE_APP_NAME` in
+`.env.local`). The wordmark lives at `src/assets/logo_exavyn.png` and is reused
+as the favicon at `public/logo_exavyn.png`. The old slogan is no longer rendered
+beside or below the logo.
 
-A three-way theme control — **Light / Dark / System** — is available on the auth
-pages, the app shell (dashboard/admin/teacher/profile), and the exam topbar.
-It is implemented as an in-page segmented control (`role="group"` with
-`aria-pressed` buttons), never a page inversion or CSS filter, so switching
-themes cannot exit fullscreen or register as a departure during an exam.
+**Typography.** Display headings use **Space Grotesk Variable**; body and form
+copy use the platform UI stack; technical values, counters, table headers, and
+timers use **JetBrains Mono Variable**. Both fonts are self-hosted through
+`@fontsource-variable`, so production does not depend on a third-party font CDN.
+Azonix was not supplied as a licensed font asset, so Space Grotesk is the
+intentional geometric substitute. The supplied wordmark keeps a light backing
+on dark surfaces (never inverted).
 
-- Preference is stored under the `exavyn.theme` key and applied to
-  `<html data-theme>` (plus `color-scheme`) by an inline no-flash script in
-  `index.html` **before first paint**. `src/lib/theme.ts` owns the primitives;
-  `src/features/theme/ThemeContext.tsx` owns state and OS-change subscription.
-- **System** follows live `prefers-color-scheme` changes; choosing Light/Dark
-  pins the theme and stops following the OS until System is re-selected.
-- The supplied logo has navy lettering, so on dark surfaces it is given a white
-  backing (never inverted) to stay legible.
+**Visual system.** The Cyber-Tribal direction uses layered dark surfaces,
+restrained cyan/green actions, thin geometric artwork, and softly rounded 8px
+controls. The artwork is original local SVG/CSS geometry — no tattoos, sacred
+symbols, masks, or remote placeholder imagery. Reference colours (cyan
+`#00FFFF`, jungle `#29AB87`, magenta `#FF00FF`, indigo `#4B0082`, orange
+`#FF4500`, blacklight purple `#BF00FF`) are decorative accents; functional
+tokens use accessible variants. Key functional dark tokens are page `#080B14`,
+sidebar/header `#0D1323`, card `#121A2D`, elevated `#1A2440`, border `#2B3652`,
+primary text `#E8EEF7`, secondary text `#ADB9CE`, action/link `#40D9D9`,
+secondary accent `#38B899`, purple `#A875E8`, magenta `#DC68CC`, orange
+`#E88960`, with `#081318` button text. Score tones remain green/yellow/red/
+neutral and are independent of branding.
+
+**Public vs authenticated surfaces.**
+
+- Login, registration, recovery, and password-update screens are **fixed dark**
+  and expose no appearance controls. `<html data-surface="public">` scopes their
+  tokens; the inline script and `ThemeSurface` keep this in sync before paint.
+  Public screens never read, change, or persist `exavyn.theme`, so visiting them
+  cannot overwrite a signed-in user's saved preference.
+- The authenticated app keeps **Light / Dark / System**, with controls only under
+  **Profile → Settings → Appearance**. The chosen mode is stored under
+  `exavyn.theme`, applied to `<html data-theme>` plus `color-scheme`, and
+  **System** follows live `prefers-color-scheme` changes. Active exams stay
+  visually quiet and never show appearance controls.
 
 ## Tests
 
@@ -312,9 +331,9 @@ themes cannot exit fullscreen or register as a departure during an exam.
 | --- | --- | --- |
 | `npm run typecheck` | `tsc -b` (strict; note: `npx tsc --noEmit` does **not** check referenced projects) | green |
 | `npm run lint` | ESLint (TS + React-Hooks classic rules) | green |
-| `npm test` | 121 Vitest unit/component tests | green |
+| `npm test` | 124 Vitest unit/component tests | green |
 | `npm run build` | production build | green |
-| `npm run test:e2e` | Playwright public/auth/branding plus credential-gated exam checks | green: 33 passed, 9 skipped, 0 failed |
+| `npm run test:e2e` | Playwright public/auth/branding plus credential-gated exam checks | green: Chromium 26 passed / 1 skipped; Firefox public smoke 12/12 |
 | `E2E_ANSWER_INTEGRITY=true npx playwright test tests/e2e/answer-integrity.exam.spec.ts --project=chromium --workers=1` | Dedicated shuffled B → C, delayed-save, clear, reload, database/grade/review scenario plus progress counters | green: 1/1 local and production |
 | `npx playwright test tests/e2e/sidebar-admin.spec.ts tests/e2e/theme-authenticated.spec.ts tests/e2e/feedback.spec.ts --project=chromium` | Credential-gated sidebar/admin embed, mobile drawer focus, theme persistence, feedback routing/unread | green: 9/9 production |
 | `npm run e2e:fixture` | Provision a self-contained authenticated-e2e fixture (teacher + student + published exam) into `.env.server.local` | used for the headed authenticated flow |
@@ -348,10 +367,11 @@ validated with per-question/per-line errors, and only then replaces the question
 list — a malformed file imports nothing.
 
 The Playwright suite covers the **public surface** (routing, auth pages, setup
-banner) plus **branding and theming** (title/logo, Light/Dark/System control,
-persistence across reload and client-side navigation, live System following,
-keyboard operation, and a 390px mobile layout) so it runs without a backend
-(26/26 across Chromium and Firefox). A credential-gated spec (`tests/e2e/authenticated.exam.spec.ts`) exercises the
+banner) plus public branding and privacy (title/logo with no slogan, fixed-dark
+surface on every public account page, no appearance controls, saved preferences
+left untouched, no-flash surface application, and a 390px mobile layout) so it
+runs without a backend (12/12 in each of Chromium and Firefox). A
+credential-gated spec (`tests/e2e/authenticated.exam.spec.ts`) exercises the
 authenticated exam UI — sign-in, instructions policy, answer save, first-departure
 warning, second-departure finalize — and **skips** unless `E2E_SUPABASE_CONFIGURED`
 plus student credentials are provided. `npm run e2e:fixture` provisions those
@@ -363,9 +383,9 @@ passes 3/3: departures are driven by real `document.exitFullscreen()` calls
 the environment refuses fullscreen the flow skips rather than fails.
 
 A matching credential-gated spec (`tests/e2e/theme-authenticated.spec.ts`)
-verifies the brand and theme control on the signed-in dashboard (with the choice
-persisting across reload and a console-error check) and that the chosen theme
-carries into the exam instructions page.
+verifies that appearance controls live only under Profile → Settings →
+Appearance, that the choice persists across reload with no console errors, and
+that the chosen authenticated theme carries into the exam instructions page.
 
 OS-level app switches (Command+Tab on macOS, Alt+Tab on Windows) surface to the
 app as window `blur` → `focus_lost` (unit tested via a real `blur` event). The OS
@@ -416,13 +436,15 @@ acceptance matrix, fixture/cleanup policy).
 
 Local (deterministic) — **pass**:
 
-- `tsc -b`, ESLint, `vitest` (121/121), `vite build` all pass.
+- `tsc -b`, ESLint, `vitest` (124/124), `vite build` all pass.
 - Hosted suites (`npm run test:hosted`, exit 0): RLS 36/36, workflow 65/65,
   concurrency 5/5, finality 10/10, feedback 18/18 (134/134).
-- Playwright public-surface + registration + branding/theme smoke: 26/26 across
-  Chromium and Firefox (registration: no duplicate submit; clear 429 email-limit
-  message; themes: Light/Dark/System control, persistence, live System following,
-  keyboard operation, desktop + 390px mobile).
+- Playwright public-surface + registration + branding smoke: 12/12 in
+  Chromium and 12/12 in Firefox (registration: no duplicate submit; clear 429
+  email-limit message; public pages: fixed-dark surface, no appearance controls,
+  saved preference untouched, no-flash boot, desktop + 390px mobile).
+- Authenticated Chromium suite: 26 passed / 1 skipped (answer-integrity scenario
+  runs separately when explicitly enabled).
 - Administrator route: `admin@exam.test` signs in and lands on `/admin` (admin e2e 2/2);
   `admin@gmail.com` is provisioned through the token-gated `bootstrap-admin` path
   (`npm run admin:provision`).
@@ -582,12 +604,13 @@ to project `tddmtdhhckykwnoydvjc` without a reset and recorded in
 `supabase_migrations.schema_migrations`.
 
 **Checks actually run in this repository:**
-`npm run typecheck` pass · `npm run lint` pass · `npm test` **121/121** ·
+`npm run typecheck` pass · `npm run lint` pass · `npm test` **124/124** ·
 `npm run build` pass (one non-blocking chunk-size warning) ·
-`npm run test:e2e` **33 passed / 9 skipped / 0 failed** for the public/smoke
-suite. Dedicated credential-gated specs add sidebar/admin **4/4**, theme
-**2/2**, feedback **3/3**, and answer integrity **1/1**, all green locally and
-against production.
+Playwright Chromium **26 passed / 1 skipped**, Firefox public smoke **12/12**,
+and answer integrity **1/1** locally. The dedicated credential-gated sidebar/
+admin **4/4**, authenticated theme **2/2**, and feedback **3/3** are included in
+the Chromium run. The hosted database suites remain **134/134** (no backend or
+auth changes were made for the visual redesign).
 
 **Hosted steps (dedicated test project `tddmtdhhckykwnoydvjc`):**
 forward migrations through `2026010100025` applied via `supabase db push` (no

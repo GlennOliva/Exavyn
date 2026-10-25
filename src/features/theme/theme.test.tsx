@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { Brand } from '../../components/Brand';
-import { THEME_STORAGE_KEY, readStoredTheme, resolveTheme } from '../../lib/theme';
+import {
+  THEME_STORAGE_KEY,
+  applyTheme,
+  isPublicAuthPath,
+  readStoredTheme,
+  resolveTheme,
+} from '../../lib/theme';
 
 type ChangeListener = (event: { matches: boolean }) => void;
 let listeners: ChangeListener[] = [];
@@ -39,14 +45,17 @@ function setSystemDark(value: boolean) {
 
 beforeEach(() => {
   window.localStorage.clear();
+  window.history.replaceState({}, '', '/');
   listeners = [];
   prefersDark = false;
   installMatchMedia();
   document.documentElement.removeAttribute('data-theme');
+  document.documentElement.removeAttribute('data-surface');
 });
 
 afterEach(() => {
   document.documentElement.removeAttribute('data-theme');
+  document.documentElement.removeAttribute('data-surface');
   document.documentElement.style.colorScheme = '';
 });
 
@@ -94,6 +103,47 @@ describe('theme resolution and persistence', () => {
     await act(async () => setSystemDark(true));
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
+
+  it('recognises only the public account paths', () => {
+    expect(isPublicAuthPath('/login')).toBe(true);
+    expect(isPublicAuthPath('/register/')).toBe(true);
+    expect(isPublicAuthPath('/forgot-password')).toBe(true);
+    expect(isPublicAuthPath('/update-password')).toBe(true);
+    expect(isPublicAuthPath('/student')).toBe(false);
+    expect(isPublicAuthPath('/login-help')).toBe(false);
+  });
+
+  it('forces the public auth surface dark without overwriting the saved preference', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    window.history.replaceState({}, '', '/login');
+    const { result } = renderHook(() => useTheme(), { wrapper: ThemeProvider });
+
+    expect(result.current.surface).toBe('public');
+    expect(document.documentElement.getAttribute('data-surface')).toBe('public');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+  });
+
+  it('restores the saved preference when leaving the public surface', async () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    const { result } = renderHook(() => useTheme(), { wrapper: ThemeProvider });
+
+    await act(async () => result.current.setSurface('public'));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+
+    await act(async () => result.current.setSurface('app'));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(document.documentElement.getAttribute('data-surface')).toBe('app');
+  });
+
+  it('applies the public surface directly without persisting a theme', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+    expect(applyTheme('light', 'public')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-surface')).toBe('public');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
+  });
 });
 
 describe('ThemeToggle', () => {
@@ -136,14 +186,8 @@ describe('ThemeToggle', () => {
 });
 
 describe('Brand', () => {
-  it('renders the logo with accessible alt text and the tagline', () => {
+  it('renders the logo with accessible alt text and no slogan', () => {
     render(<Brand />);
-    expect(screen.getByAltText('Exavyn')).toBeInTheDocument();
-    expect(screen.getByText('Focused exams. Clear results.')).toBeInTheDocument();
-  });
-
-  it('can omit the tagline for authenticated application chrome', () => {
-    render(<Brand showTagline={false} />);
     expect(screen.getByAltText('Exavyn')).toBeInTheDocument();
     expect(screen.queryByText('Focused exams. Clear results.')).toBeNull();
   });

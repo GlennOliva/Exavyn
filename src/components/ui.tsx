@@ -131,8 +131,16 @@ export function Spinner({ label }: { label?: string }) {
 
 export function PageSpinner() {
   return (
-    <div className="spinner-page">
-      <Spinner label="Loading…" />
+    <div className="skeleton-page" role="status" aria-live="polite" aria-busy="true">
+      <span className="sr-only">Loading…</span>
+      <div className="skeleton-bar skeleton-title" aria-hidden="true" />
+      <div className="skeleton-bar skeleton-subtitle" aria-hidden="true" />
+      <div className="skeleton-panel" aria-hidden="true" />
+      <div className="skeleton-rows" aria-hidden="true">
+        <div className="skeleton-bar skeleton-row" />
+        <div className="skeleton-bar skeleton-row" />
+        <div className="skeleton-bar skeleton-row" />
+      </div>
     </div>
   );
 }
@@ -140,6 +148,17 @@ export function PageSpinner() {
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="empty">
+      <span className="empty-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path
+            d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+          <path d="m8 11 2.4 2.4L16 8.8" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+      </span>
       <h3>{title}</h3>
       {children}
     </div>

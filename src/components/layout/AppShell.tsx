@@ -233,7 +233,7 @@ export function AppShell() {
           <CloseIcon />
         </button>
         <NavLink to="/" className="app-brand sidebar-brand" aria-label={appName} onClick={handleNavClick}>
-          <Brand variant="header" showTagline={false} />
+          <Brand variant="header" />
         </NavLink>
         {user ? (
           <>
