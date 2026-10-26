@@ -41,7 +41,7 @@ export async function signOut(): Promise<void> {
 
 export async function sendPasswordReset(email: string): Promise<void> {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: passwordResetRedirectUrl(window.location.origin),
+    redirectTo: passwordResetRedirectUrl(),
   });
   if (error) throw toAppError(error);
 }

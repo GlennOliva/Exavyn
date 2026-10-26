@@ -10,10 +10,10 @@ workflow, and the concurrency/finality guarantees.
 > `tddmtdhhckykwnoydvjc`. Re-verified live on 2026-10-26 after the teacher-search
 > and recovery fixes: RLS **36/36**, workflow **65/65**, concurrency **5/5**,
 > finality **10/10**, feedback **18/18**, teacher search **12/12** (hosted total
-> **146/146**); unit **141/141**; Chromium **28 passed / 1 skipped**; Firefox
+> **146/146**); unit **143/143**; Chromium **28 passed / 1 skipped**; Firefox
 > public smoke **12/12** plus recovery/search **2/2**; typecheck/lint/build
 > clean. Production is deployed at `https://exavyn.vercel.app` (assets
-> `index-8tlsis3P.js` / `index-DqhDLp1g.css`); production public **10/10**,
+> `index-ZmwEjDxh.js` / `index-DqhDLp1g.css`); production public **10/10**,
 > teacher search **1/1**, and expired-recovery **1/1** passed.
 > Forward migrations `0013`-`0026` are applied without a reset and recorded.
 > **Recovery config remains blocked:** hosted Auth Site URL is still
@@ -89,7 +89,7 @@ never put it in a `VITE_*` variable.
 | `VITE_SUPABASE_URL` | Project URL |
 | `VITE_SUPABASE_ANON_KEY` | Publishable / anon key |
 | `VITE_APP_NAME` | Optional display name |
-| `VITE_PUBLIC_SITE_URL` | Canonical origin for password-recovery redirects; set to `https://exavyn.vercel.app` in Vercel Production. Unset locally so recovery returns to the dev origin. |
+| `VITE_PUBLIC_SITE_URL` | No longer used for password-recovery redirects; recovery always targets `https://exavyn.vercel.app/update-password`. |
 
 ### Server-only secrets — `.env.server.local` (gitignored; template `.env.server.example`)
 
@@ -598,7 +598,7 @@ server environment present (`.env.server.local`).
 
 ```
 Environment: hosted test project tddmtdhhckykwnoydvjc   Node 24.14.0
-Local checks (offline):  typecheck PASS, lint PASS, unit 141/141, build PASS,
+Local checks (offline):  typecheck PASS, lint PASS, unit 143/143, build PASS,
                          Chromium 28 passed / 1 skipped; Firefox public smoke
                          12/12 plus recovery/search 2/2 (authenticated/admin
                          specs use fixture E2E_* creds)
@@ -800,19 +800,37 @@ parentheses are data, not filter syntax. The UI debounces 300 ms, hides stale
 rows/counts while a query settles, resets to page 1, and clears search + status
 atomically.
 
-**Password recovery.** `resetPasswordForEmail` now uses the compiled
-`VITE_PUBLIC_SITE_URL` when it is a valid non-localhost HTTP(S) origin, with the
-current origin as the local fallback. Vercel Production sets
-`VITE_PUBLIC_SITE_URL=https://exavyn.vercel.app` (confirmed in the deployed
-bundle). `UpdatePasswordPage` separately models an invalid/expired link versus a
-valid recovery session, maps `otp_expired` / `session_not_found` /
-`access_denied` to safe actionable copy, removes sensitive hash/query data, and
-only reports success after `updateUser` resolves. A generated local recovery
-link completed form → update → sign-in successfully; the expired state passes on
-production.
+**Password recovery.** `passwordResetRedirectUrl()` now returns
+`https://exavyn.vercel.app/update-password` unconditionally, and
+`resetPasswordForEmail` passes it through `options.redirectTo`. No current-origin,
+localhost, or `VITE_PUBLIC_SITE_URL` fallback remains. `UpdatePasswordPage`
+separately models an invalid/expired link versus a valid recovery session, maps
+`otp_expired` / `session_not_found` / `access_denied` to safe actionable copy,
+removes sensitive hash/query data, and only reports success after `updateUser`
+resolves.
 
-**Operator action still required (blocked — no management access).** Hosted
-Auth still returns `http://localhost:3000` for a production recovery request:
+Production is deployed at `https://exavyn.vercel.app` (asset
+`index-ZmwEjDxh.js`, deployment `dpl_Ex1CW9ZeL1VYCe9N7EDqUBkeBNvW`) and its
+bundle/request use Supabase project **`tddmtdhhckykwnoydvjc`**. The production
+request now sends:
+
+```
+POST https://tddmtdhhckykwnoydvjc.supabase.co/auth/v1/recover
+redirect_to=https://exavyn.vercel.app/update-password
+status=200
+```
+
+A fresh recovery email captured with a disposable inbox still contains
+`redirect_to=http://localhost:3000`. Localhost appears only inside the generated
+action URL, not in visible email copy. A redirect probe of
+`https://exavyn.vercel.app/update-password`, the bare origin, trailing slash,
+`/auth/callback`, and `/**` all returned localhost; only the localhost callback
+is allowlisted.
+
+**Operator action still required (blocked — no management access).** The
+Management API returns 403 for `tddmtdhhckykwnoydvjc`; the project is absent from
+the accessible project list and `SUPABASE_ACCESS_TOKEN` is absent. Therefore the
+hosted Auth settings cannot be confirmed or changed from this environment:
 
 ```
 npm run check:auth-redirect -- <disposable-test-email>
@@ -826,17 +844,12 @@ In Supabase Dashboard → Authentication → URL Configuration:
 
 1. Set **Site URL** to `https://exavyn.vercel.app`.
 2. Add exact redirect `https://exavyn.vercel.app/update-password`.
-3. Keep `http://localhost:5173/update-password` and
-   `http://localhost:3000/update-password` for local development.
+3. Remove any localhost from the recovery template.
 4. Do not add a production wildcard. Re-run `check:auth-redirect`; it must print
    `PASS`.
 
-The CLI account cannot access this project (`SUPABASE_ACCESS_TOKEN` absent;
-`supabase link` returns “Your account does not have the necessary privileges”).
-Fresh production recovery-email delivery is also unverified because no
-authorized test inbox is available. The expired-link UI, local valid-link flow,
-code path, and deployed environment value are verified; the remote Auth setting
-is not.
+The expired-link UI, code path, deployed request, and fresh-email capture are
+verified; the remote Auth setting is not.
 
 ### V2 shell, feedback routing, progress, and exact-point scoring (2026-10-25)
 

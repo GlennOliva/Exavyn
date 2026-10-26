@@ -609,35 +609,36 @@ apostrophes/commas/parentheses never enter a PostgREST filter grammar. Deployed
 UI search is debounced by 300 ms, hides stale rows/counts while a query settles,
 resets to page 1, and offers a working atomic “Clear search and filters” action.
 
-**Password recovery.** The app used the current browser origin for
-`redirectTo`, but hosted Auth still had `Site URL = http://localhost:3000` and
-no production redirect entry, so `generateLink` fell back to localhost. The new
-browser-safe `VITE_PUBLIC_SITE_URL` is set to `https://exavyn.vercel.app` in
-Vercel Production (verified in the deployed bundle); local development
-continues to use its current origin. `UpdatePasswordPage` now distinguishes a
-missing/expired recovery session from a valid one, shows a safe actionable
-message, handles implicit-flow errors such as `otp_expired`, clears sensitive
-hash/query data, confirms success only after `updateUser` succeeds, and never
-turns a failed update into a success claim. A valid local recovery link was
-exercised end-to-end (form → new password → successful sign-in), and the expired
-state is covered in production.
+**Password recovery.** `passwordResetRedirectUrl()` now returns the canonical
+`https://exavyn.vercel.app/update-password` unconditionally, and
+`resetPasswordForEmail` passes it through `options.redirectTo`. There is no
+fallback to `window.location.origin`, localhost, or `VITE_PUBLIC_SITE_URL`.
+`UpdatePasswordPage` still distinguishes a missing/expired recovery session from
+a valid one, shows a safe actionable message, handles implicit-flow errors such
+as `otp_expired`, clears sensitive hash/query data, and confirms success only
+after `updateUser` succeeds.
 
-**Still blocked:** hosted Auth Site URL/redirect configuration cannot be changed
-with the available CLI credentials (`SUPABASE_ACCESS_TOKEN` is absent and the
-logged-in CLI profile cannot access this project). In Supabase Dashboard →
-Authentication → URL Configuration, set **Site URL** to
-`https://exavyn.vercel.app` and add the exact redirect
-`https://exavyn.vercel.app/update-password` (keep localhost entries for local
-development; do not add a production wildcard). Until that is done,
-`npm run check:auth-redirect -- <disposable-test-email>` reports that the
-production redirect falls back to `http://localhost:3000`. Fresh recovery-email
-delivery also remains unverified because no authorized test inbox is available.
+The production deployment (`https://exavyn.vercel.app`, asset `index-ZmwEjDxh.js`,
+deployment `dpl_Ex1CW9ZeL1VYCe9N7EDqUBkeBNvW`) sends
+`redirect_to=https://exavyn.vercel.app/update-password`. The production Supabase
+project is the hosted test project `tddmtdhhckykwnoydvjc`, not the linked
+migration project. A fresh recovery email captured with a disposable inbox
+still contains `redirect_to=http://localhost:3000`: localhost appears only
+inside the generated action URL, not in visible email copy.
 
-**Verification for these fixes:** unit **141/141**; hosted **146/146**; Chromium
-**28 passed / 1 skipped**; Firefox recovery/search **2/2**; production public
-**10/10**; production teacher search **1/1**; production expired-recovery page
-**1/1**; typecheck, lint, and build clean. Production serves
-`index-8tlsis3P.js` / `index-DqhDLp1g.css`.
+**Still blocked:** the available account cannot manage
+`tddmtdhhckykwnoydvjc` (Management API returns 403; the project is absent from
+the accessible project list), so its Auth Site URL/allowlist/template cannot be
+confirmed or changed. In Supabase Dashboard → Authentication → URL Configuration
+set **Site URL** to `https://exavyn.vercel.app`, add exact redirect
+`https://exavyn.vercel.app/update-password`, and remove any localhost from the
+recovery template. Until then, `check:auth-redirect -- <test-email>` and fresh
+production recovery emails still return localhost.
+
+**Verification for these fixes:** unit **143/143**; lint, typecheck, and build
+clean; production expired-recovery E2E **1/1**; production recovery request
+**200** with the canonical `redirect_to`; fresh email inspected without logging
+its token.
 
 ## Completion report
 
