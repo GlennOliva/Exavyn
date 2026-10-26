@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 export const PAGE_SIZES = [10, 25, 50] as const;
@@ -69,17 +69,20 @@ export function usePageState(prefix = ''): PageState {
   const page = parsePage(params.get(key('page')));
   const pageSize = parsePageSize(params.get(key('pageSize')));
   const q = params.get(key('q')) ?? '';
+  // React Router's functional setSearchParams uses the searchParams captured by
+  // the current render. Two URL updates in one tick (for example clearing the
+  // search and immediately changing a filter) would otherwise lose the first.
+  const paramsRef = useRef(params);
+  useEffect(() => {
+    paramsRef.current = params;
+  }, [params]);
 
   const commit = useCallback(
     (mutate: (next: URLSearchParams) => void, replace: boolean) => {
-      setParams(
-        (previous) => {
-          const next = new URLSearchParams(previous);
-          mutate(next);
-          return next;
-        },
-        { replace },
-      );
+      const next = new URLSearchParams(paramsRef.current);
+      mutate(next);
+      paramsRef.current = next;
+      setParams(next, { replace });
     },
     [setParams],
   );
@@ -144,7 +147,9 @@ export function usePageState(prefix = ''): PageState {
   );
 
   const reset = useCallback(() => {
-    setParams(new URLSearchParams(), { replace: false });
+    const next = new URLSearchParams();
+    paramsRef.current = next;
+    setParams(next, { replace: false });
   }, [setParams]);
 
   const getFilter = useCallback((name: string) => params.get(key(name)) ?? '', [params, key]);

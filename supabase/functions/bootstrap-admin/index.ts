@@ -19,7 +19,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const serviceKey = Deno.env.get('EXAVYN_SECRET_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const expectedToken = Deno.env.get('BOOTSTRAP_ADMIN_TOKEN');
 
   if (!supabaseUrl || !serviceKey) {

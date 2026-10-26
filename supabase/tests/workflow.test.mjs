@@ -562,8 +562,10 @@ async function main() {
     assertEquals(result.percentage, null, 'percentage hidden');
   });
   await runner.check('scheduled score and answer release boundaries are server-enforced', async () => {
-    const resultAt = new Date(Date.now() + 1800).toISOString();
-    const answerAt = new Date(Date.now() + 3200).toISOString();
+    const resultAtMs = Date.now() + 10_000;
+    const answerAtMs = resultAtMs + 15_000;
+    const resultAt = new Date(resultAtMs).toISOString();
+    const answerAt = new Date(answerAtMs).toISOString();
     const scheduled = buildExamPayload({
       courseId,
       title: 'Scheduled Release Exam',
@@ -589,12 +591,12 @@ async function main() {
     const direct = await studentPC.from('exam_attempts').select('id,percentage').eq('id', started.data.attempt_id);
     assertNoError(direct.error, 'direct scheduled attempt query');
     assertEquals(direct.data.length, 0, 'direct row hidden before release');
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, resultAtMs + 1000 - Date.now())));
     const score = await studentPC.rpc('get_result', { p_attempt_id: started.data.attempt_id });
     assertNoError(score.error, 'scheduled result after release');
     assertEquals(score.data.released, true, 'score released at schedule');
     assertEquals(score.data.review_released, false, 'answers remain hidden until answer schedule');
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, answerAtMs + 1000 - Date.now())));
     const review = await studentPC.rpc('get_attempt_review', { p_attempt_id: started.data.attempt_id });
     assertNoError(review.error, 'scheduled review after release');
     assertEquals(review.data.review_released, true, 'answers released at schedule');
