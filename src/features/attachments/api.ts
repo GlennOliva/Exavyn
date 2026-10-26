@@ -19,7 +19,7 @@ export async function requestFeedbackAttachmentUpload(params: {
   mimeType: string;
   sizeBytes: number;
   contentType: string;
-}): Promise<{ upload_url: string; object_path: string; attachment_id: string }> {
+}): Promise<{ upload_url?: string; object_path: string; attachment_id: string }> {
   const { data, error } = await supabase.rpc('request_feedback_attachment_upload', {
     p_feedback_id: params.feedbackId,
     p_file_name: params.fileName,
@@ -28,7 +28,15 @@ export async function requestFeedbackAttachmentUpload(params: {
     p_content_type: params.contentType,
   });
   if (error) throw toAppError(error);
-  return data as unknown as { upload_url: string; object_path: string; attachment_id: string };
+  return data as unknown as { upload_url?: string; object_path: string; attachment_id: string };
+}
+
+export async function uploadFeedbackAttachmentDirect(objectPath: string, file: File): Promise<void> {
+  const { error } = await supabase.storage.from('feedback-attachments').upload(objectPath, file, {
+    contentType: file.type || 'application/octet-stream',
+    upsert: false,
+  });
+  if (error) throw toAppError(error);
 }
 
 export async function confirmFeedbackAttachmentUpload(params: {
