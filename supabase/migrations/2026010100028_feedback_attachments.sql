@@ -1,7 +1,7 @@
 -- Feedback attachments: private bucket, validation, quotas, ownership, authorized access
 create table if not exists public.feedback_attachments (
   id uuid primary key default gen_random_uuid(),
-  feedback_id uuid not null references public.feedback (id) on delete cascade,
+  feedback_id uuid not null references public.exam_feedback (id) on delete cascade,
   object_path text not null,
   original_name text not null,
   mime_type text not null,
@@ -43,22 +43,16 @@ set search_path = public, pg_temp
 as $$
 declare
   v_uid uuid := auth.uid();
-  v_fb public.feedback;
-  v_role text;
+  v_fb public.exam_feedback;
 begin
   if v_uid is null then return false; end if;
-  select * into v_fb from public.feedback where id = p_feedback_id;
+  select * into v_fb from public.exam_feedback where id = p_feedback_id;
   if not found then return false; end if;
   if v_fb.student_id = v_uid then return true; end if;
   if app.is_admin() then return true; end if;
-  -- teacher of course
   if v_fb.recipient_teacher_id = v_uid then return true; end if;
   if v_fb.recipient_type = 'course_teacher' and v_fb.course_id is not null then
-    select role into v_role from public.user_roles where user_id = v_uid and role = 'teacher' limit 1;
-    if v_role is not null then
-      -- allow if teacher owns course or is enrolled? owned courses
-      if exists (select 1 from public.courses where id = v_fb.course_id and owner_id = v_uid) then return true; end if;
-    end if;
+    if exists (select 1 from public.courses where id = v_fb.course_id and owner_id = v_uid) then return true; end if;
   end if;
   return false;
 end;
@@ -73,32 +67,10 @@ set search_path = public, pg_temp
 as $$
 declare
   v_uid uuid := auth.uid();
-  v_fb public.feedback;
-begin
-  if v_uid is null then return false; end if;
-  select student_id into v_fb.student_id from public.feedback where id = p_feedback_id;
-  -- simpler
-  select student_id into v_fb.student_id from (select student_id from public.feedback where id = p_feedback_id) x(student_id);
-  -- avoid record type issues
-  select student_id into v_fb from public.feedback where id = p_feedback_id;
-  return v_fb.student_id = v_uid;
-end;
-$$;
-
-drop function if exists public.is_feedback_owner(uuid);
-create or replace function public.is_feedback_owner(p_feedback_id uuid)
-returns boolean
-language plpgsql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_uid uuid := auth.uid();
   v_sid uuid;
 begin
   if v_uid is null then return false; end if;
-  select student_id into v_sid from public.feedback where id = p_feedback_id;
+  select student_id into v_sid from public.exam_feedback where id = p_feedback_id;
   return v_sid = v_uid;
 end;
 $$;
@@ -134,14 +106,14 @@ set search_path = public, pg_temp
 as $$
 declare
   v_uid uuid := app.require_user();
-  v_fb public.feedback;
+  v_fb public.exam_feedback;
   v_ext text;
   v_path text;
   v_id uuid;
   v_count integer;
 begin
   if not app.has_role('student') then raise exception 'Only students can attach screenshots' using errcode = '42501'; end if;
-  select * into v_fb from public.feedback where id = p_feedback_id and student_id = v_uid for update;
+  select * into v_fb from public.exam_feedback where id = p_feedback_id and student_id = v_uid for update;
   if not found then raise exception 'Feedback not found or not owned' using errcode = 'P0002'; end if;
   if p_mime_type not in ('image/png','image/jpeg','image/webp') then raise exception 'Unsupported file type' using errcode = '22023'; end if;
   if p_size_bytes < 1 or p_size_bytes > 5242880 then raise exception 'Invalid file size' using errcode = '22023'; end if;
@@ -157,8 +129,7 @@ begin
   values (p_feedback_id, v_path, p_file_name, p_mime_type, p_size_bytes, v_uid)
   returning id into v_id;
 
-  -- Generate signed upload URL
-  return jsonb_build_object('upload_url', storage.create_signed_upload_url('feedback-attachments', v_path), 'object_path', v_path, 'attachment_id', v_id);
+  return jsonb_build_object('object_path', v_path, 'attachment_id', v_id);
 exception
   when others then raise;
 end;
@@ -182,7 +153,6 @@ begin
   if not found then raise exception 'Attachment not found' using errcode = 'P0002'; end if;
   if v_att.uploaded_by <> v_uid then raise exception 'Not owner' using errcode = '42501'; end if;
   if not public.is_feedback_owner(p_feedback_id) then raise exception 'Not owner of feedback' using errcode = '42501'; end if;
-  -- Attachment exists in bucket if uploaded; RLS/storage policies enforced separately
 end;
 $$;
 
@@ -199,7 +169,6 @@ declare
   v_att public.feedback_attachments;
   v_url text;
 begin
-  v_uid_check: declare v_uid uuid := auth.uid(); begin end;
   if auth.uid() is null then raise exception 'Not authenticated' using errcode = '42501'; end if;
   select * into v_att from public.feedback_attachments where id = p_attachment_id and feedback_id = p_feedback_id;
   if not found then raise exception 'Attachment not found' using errcode = 'P0002'; end if;
@@ -255,7 +224,6 @@ begin
   select * into v_att from public.feedback_attachments where id = p_attachment_id and feedback_id = p_feedback_id;
   if not found then return; end if;
   if v_att.uploaded_by <> v_uid or not public.is_feedback_owner(p_feedback_id) then raise exception 'Not authorized' using errcode = '42501'; end if;
-  -- Note: storage object cleanup should be handled by storage policies/triggers; we remove DB record
   delete from public.feedback_attachments where id = p_attachment_id;
 end;
 $$;
@@ -268,7 +236,6 @@ create policy feedback_attachments_storage_select on storage.objects
     bucket_id = 'feedback-attachments' and
     exists (
       select 1 from public.feedback_attachments fa
-      join public.feedback f on f.id = fa.feedback_id
       where fa.object_path = storage.objects.name
         and public.can_access_feedback(fa.feedback_id)
     )
