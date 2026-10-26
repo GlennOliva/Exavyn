@@ -19,20 +19,14 @@ export function normalizePublicSiteUrl(value: string | null | undefined): string
 }
 
 /**
- * Resolve the URL Supabase should return to after a recovery link.
- *
- * Production deploys set VITE_PUBLIC_SITE_URL to the stable Vercel origin.
- * Local development leaves it unset and therefore uses the dev server origin.
- * The configured value is validated (HTTPS; HTTP only for localhost), and an
- * invalid value falls back to the current origin rather than localhost.
+ * The canonical password-recovery destination. Recovery links must always
+ * return to the production app, regardless of the browser origin, local
+ * development, or a missing/invalid VITE_PUBLIC_SITE_URL value.
  */
-export function passwordResetRedirectUrl(currentOrigin: string): string {
-  const configured = normalizePublicSiteUrl(
-    import.meta.env.VITE_PUBLIC_SITE_URL as string | undefined,
-  );
-  const current = normalizePublicSiteUrl(currentOrigin);
-  const base = configured ?? current ?? currentOrigin.replace(/\/+$/, '');
-  return `${base}/update-password`;
+const PASSWORD_RESET_REDIRECT_URL = 'https://exavyn.vercel.app/update-password';
+
+export function passwordResetRedirectUrl(): string {
+  return PASSWORD_RESET_REDIRECT_URL;
 }
 
 export interface RecoveryLinkFailure {

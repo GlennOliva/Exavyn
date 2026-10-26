@@ -99,7 +99,7 @@ export function ExamInstructionsPage() {
           {exam.course_code} · {exam.course_title}
         </p>
 
-        <div className="table-wrap mt-2">
+        <div className="table-wrap mt-2 exam-instructions-details">
           <table>
             <tbody>
               <tr>
@@ -217,7 +217,7 @@ export function ExamInstructionsPage() {
           </Alert>
         ) : null}
 
-        <label className="row mt-2">
+        <label className="row mt-3 exam-instructions-rules">
           <input
             type="checkbox"
             checked={acknowledged}

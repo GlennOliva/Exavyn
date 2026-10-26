@@ -13,23 +13,26 @@ afterEach(() => {
 describe('recovery redirects', () => {
   it('uses the stable configured production origin', () => {
     vi.stubEnv('VITE_PUBLIC_SITE_URL', 'https://exavyn.vercel.app');
-    expect(passwordResetRedirectUrl('https://preview.example.test')).toBe(
+    expect(passwordResetRedirectUrl()).toBe(
       'https://exavyn.vercel.app/update-password',
     );
   });
 
-  it('uses the current local origin when no production origin is configured', () => {
+  it('always uses the production destination when the current origin is localhost', () => {
+    window.history.replaceState(null, '', '/forgot-password');
+    expect(window.location.origin).toBe('http://localhost:3000');
+    vi.stubEnv('VITE_PUBLIC_SITE_URL', 'http://localhost:5173');
+    expect(passwordResetRedirectUrl()).toBe('https://exavyn.vercel.app/update-password');
+  });
+
+  it('always uses the production destination when configuration is missing', () => {
     vi.stubEnv('VITE_PUBLIC_SITE_URL', '');
-    expect(passwordResetRedirectUrl('http://localhost:5173')).toBe(
-      'http://localhost:5173/update-password',
-    );
+    expect(passwordResetRedirectUrl()).toBe('https://exavyn.vercel.app/update-password');
   });
 
-  it('falls back to the current origin rather than localhost for invalid config', () => {
+  it('always uses the production destination when configuration is invalid', () => {
     vi.stubEnv('VITE_PUBLIC_SITE_URL', 'http://evil.example.test');
-    expect(passwordResetRedirectUrl('https://exavyn.vercel.app')).toBe(
-      'https://exavyn.vercel.app/update-password',
-    );
+    expect(passwordResetRedirectUrl()).toBe('https://exavyn.vercel.app/update-password');
   });
 
   it('normalizes valid origins and rejects unsafe protocols', () => {

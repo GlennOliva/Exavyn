@@ -16,6 +16,7 @@ import { useClampPage, usePageState } from '../lib/pagination';
 import { formatDateTime } from '../lib/format';
 import { errorMessage } from '../lib/errors';
 import type { FeedbackRecipient, FeedbackStatus } from '../lib/database.types';
+import { useToasts } from '../components/toast/ToastProvider';
 
 export function FeedbackPage() {
   const { user } = useAuth();
@@ -123,7 +124,7 @@ export function FeedbackPage() {
             ) : null}
           </div>
         </div>
-        {error ? <Alert tone="danger" role="alert">{error}</Alert> : null}
+      {error ? <Alert tone="danger" role="alert">{error}</Alert> : null}
         {loading ? <PageSpinner /> : result?.rows.length ? (
           <div className="stack">
             {result.rows.map((item) => view === 'staff'
@@ -230,11 +231,13 @@ function StaffFeedbackCard({
           Related: {[item.course_title, item.exam_title].filter(Boolean).join(' · ')}
         </p>
       ) : null}
+      <FeedbackAttachments feedbackId={item.id} />
       {item.has_unread ? (
         <div className="mb-2">
           <Button size="sm" onClick={onRead}>Mark as read</Button>
         </div>
       ) : null}
+      <FeedbackAttachments feedbackId={item.id} />
       {error ? <Alert tone="danger" role="alert">{error}</Alert> : null}
       <div className="form-grid">
         <Field label="Status" htmlFor={`feedback-status-${item.id}`}>
@@ -253,5 +256,52 @@ function StaffFeedbackCard({
       </Field>
       <Button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save update'}</Button>
     </article>
+  );
+}
+
+
+function FeedbackAttachments({ feedbackId }: { feedbackId: string }) {
+  const [attachments, setAttachments] = useState<Array<{id:string;original_name:string;size_bytes:number}>>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToasts();
+
+  useEffect(() => {
+    let active = true;
+    import('../features/attachments/api')
+      .then((m) => m.listFeedbackAttachments(feedbackId))
+      .then((rows) => {
+        if (active) setAttachments(rows);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [feedbackId]);
+
+  const viewAttachment = async (att: {id:string;original_name:string;size_bytes:number}) => {
+    try {
+      const m = await import('../features/attachments/api');
+      const url = await m.getFeedbackAttachmentUrl({ attachmentId: att.id, feedbackId });
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch {
+      toast({ tone: 'error', message: 'Unable to open attachment.' });
+    }
+  };
+
+  if (loading || attachments.length === 0) return null;
+  return (
+    <div className="mt-2">
+      <div className="small muted">Attachments</div>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+        {attachments.map((att) => (
+          <Button key={att.id} size="sm" variant="ghost" onClick={() => void viewAttachment(att)}>
+            {att.original_name} ({Math.round(att.size_bytes / 1024)} KB)
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }
