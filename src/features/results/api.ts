@@ -1,18 +1,29 @@
 import { supabase } from '../../lib/supabase';
 import { toAppError } from '../../lib/errors';
 import type {
+  AttemptState,
   ExamAttemptRow,
   ProfileRow,
   ViolationEventRow,
 } from '../../lib/database.types';
 import {
-  escapePostgrestSearch,
   pageRange,
   type PageResult,
 } from '../../lib/pagination';
 
 export interface AttemptWithStudent extends ExamAttemptRow {
   student: Pick<ProfileRow, 'id' | 'full_name' | 'email'> | null;
+}
+
+export type AttemptResultRow = Omit<ExamAttemptRow, 'controller_token'> & {
+  student: Pick<ProfileRow, 'id' | 'full_name' | 'email'> | null;
+};
+
+type AttemptPageState = 'all' | AttemptState;
+
+interface AttemptPageResult {
+  rows?: AttemptResultRow[];
+  total?: number;
 }
 
 export async function listExamAttempts(examId: string): Promise<AttemptWithStudent[]> {
@@ -66,63 +77,48 @@ export async function listFlaggedAttempts(): Promise<AttemptWithStudent[]> {
 }
 
 
+function normalizeAttemptPage(data: unknown, fallback: PageResult<AttemptResultRow>) {
+  const page = (data ?? {}) as AttemptPageResult;
+  return {
+    rows: page.rows ?? fallback.rows,
+    total: typeof page.total === 'number' ? page.total : fallback.total,
+  };
+}
+
+function pageState(state: AttemptPageState | undefined): AttemptState | null {
+  return state && state !== 'all' ? state : null;
+}
+
 export async function listExamAttemptsPage(
   examId: string,
-  params: { page: number; pageSize: number; q: string; state?: 'all' | 'in_progress' | 'submitted' },
-): Promise<PageResult<AttemptWithStudent>> {
-  const { from, to } = pageRange(params.page, params.pageSize);
-  const needle = escapePostgrestSearch(params.q);
-  let query = supabase
-    .from('exam_attempts')
-    .select('*, student:profiles!exam_attempts_student_id_fkey(id, full_name, email)', {
-      count: 'exact',
-    })
-    .eq('exam_id', examId);
-  if (params.state && params.state !== 'all') query = query.eq('state', params.state);
-  if (needle) {
-    query = query.or(
-      `student.full_name.ilike.%${needle}%,student.email.ilike.%${needle}%`,
-    );
-  }
-  const { data, count, error } = await query
-    .order('started_at', { ascending: false })
-    .order('id', { ascending: false })
-    .range(from, to);
+  params: { page: number; pageSize: number; q: string; state?: AttemptPageState },
+): Promise<PageResult<AttemptResultRow>> {
+  const { data, error } = await supabase.rpc('get_exam_attempts_page', {
+    p_exam_id: examId,
+    p_search: params.q,
+    p_state: pageState(params.state),
+    p_page: params.page,
+    p_page_size: params.pageSize,
+  });
   if (error) throw toAppError(error);
-  return { rows: (data ?? []) as unknown as AttemptWithStudent[], total: count ?? 0 };
+  const empty = { rows: [], total: 0 };
+  return normalizeAttemptPage(data, empty);
 }
 
 export async function listCourseAttemptsPage(
   courseId: string,
-  params: { page: number; pageSize: number; q: string },
-): Promise<PageResult<AttemptWithStudent>> {
-  const { data: exams, error: examError } = await supabase
-    .from('exams')
-    .select('id')
-    .eq('course_id', courseId);
-  if (examError) throw toAppError(examError);
-  const examIds = (exams ?? []).map((e) => e.id);
-  if (examIds.length === 0) return { rows: [], total: 0 };
-
-  const { from, to } = pageRange(params.page, params.pageSize);
-  const needle = escapePostgrestSearch(params.q);
-  let query = supabase
-    .from('exam_attempts')
-    .select('*, student:profiles!exam_attempts_student_id_fkey(id, full_name, email)', {
-      count: 'exact',
-    })
-    .in('exam_id', examIds);
-  if (needle) {
-    query = query.or(
-      `student.full_name.ilike.%${needle}%,student.email.ilike.%${needle}%`,
-    );
-  }
-  const { data, count, error } = await query
-    .order('started_at', { ascending: false })
-    .order('id', { ascending: false })
-    .range(from, to);
+  params: { page: number; pageSize: number; q: string; state?: AttemptPageState },
+): Promise<PageResult<AttemptResultRow>> {
+  const { data, error } = await supabase.rpc('get_course_attempts_page', {
+    p_course_id: courseId,
+    p_search: params.q,
+    p_state: pageState(params.state),
+    p_page: params.page,
+    p_page_size: params.pageSize,
+  });
   if (error) throw toAppError(error);
-  return { rows: (data ?? []) as unknown as AttemptWithStudent[], total: count ?? 0 };
+  const empty = { rows: [], total: 0 };
+  return normalizeAttemptPage(data, empty);
 }
 
 export async function listAttemptViolationsPage(

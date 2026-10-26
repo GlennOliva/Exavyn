@@ -359,6 +359,26 @@ export type Database = {
         };
         Returns: Json;
       };
+      get_exam_attempts_page: {
+        Args: {
+          p_exam_id: string;
+          p_search?: string;
+          p_state?: AttemptState | null;
+          p_page?: number;
+          p_page_size?: number;
+        };
+        Returns: Json;
+      };
+      get_course_attempts_page: {
+        Args: {
+          p_course_id: string;
+          p_search?: string;
+          p_state?: AttemptState | null;
+          p_page?: number;
+          p_page_size?: number;
+        };
+        Returns: Json;
+      };
       start_attempt: {
         Args: { p_exam_id: string; p_current_token?: string | null };
         Returns: Json;
