@@ -299,3 +299,25 @@ These references support the browser capability boundaries and database authoriz
 - Fullscreen is capability-detected. Unsupported/rejected requests use a
   safe-area-aware viewport fallback and are not violations. Managed browser or
   kiosk software is required for actual device lockdown.
+
+
+## Controlled navigation exception (current implementation)
+- The question number grid is status-only and non-clickable.
+- Direct navigation is permitted only through the **Marked for review** and **Unanswered** panels. Both require flushing the latest answer before navigating, wait for server acknowledgement, prevent overlapping transitions/stale responses, and on save failure remain on the current question with a Retry option.
+- Previous/Next navigation remains available and follows the same save-before-navigation rules.
+- Bookmarks and unanswered counts update as answers change/clear/restore. Unanswered excludes answered-but-unsaved states.
+
+## Toast notifications
+- Use the shared accessible toast system for non-blocking actions (feedback success/failure, screenshot attach/fail). Critical exam warnings, save failures, and submission errors remain inline. Toasts include icon+text, respect themes, are announced to screen readers, dismissible, avoid duplicates, and do not replace critical inline messages.
+
+## Exit fullscreen after exam
+- After server-confirmed finalization (manual, expiry, violation), listeners/timers/heartbeats are stopped, lifecycle marked finalized before requesting fullscreen exit, native fullscreen exited if owned, navigate to result/pending page, and exit does not create violations; handles unsupported/rejected gracefully; clears viewport-filling layout on fallback; cancelled submissions remain active.
+
+## Finish confirmation
+- Finish Examination dialog uses green primary Submit exam, neutral secondary Continue exam; shows answered/unanswered/marked-for-review counts; states submission is final; separate unanswered info from errors; prevents double submission with submitting state; keeps dialog open on failure with helpful message.
+
+## Screenshot attachments for feedback
+- Students may attach PNG/JPEG/WebP up to 3 files, 5 MB each. Browser validation plus trusted server-side validation; SVG/executables/rejected. Private bucket with short-lived URLs; students access own, course teacher and authorized admins per permissions; prevent cross-user/replacement; quotas/rate controls; partial failures handled; abandoned uploads cleaned without deleting referenced evidence; shown in history and authorized views. No auto-capture, no exam controls. No email notifications.
+
+## Exam details spacing
+- Add vertical gap (~24px desktop, ~16px mobile) between exam details table/card and student rules card using existing spacing tokens.

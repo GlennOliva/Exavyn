@@ -1094,3 +1094,71 @@ tbody tr:hover { background: color-mix(in srgb, var(--surface-2) 62%, transparen
     animation: none !important;
   }
 }
+
+/* Toasts */
+.toast-viewport {
+  position: fixed;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: var(--layer-toast);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 260px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  animation: toast-in 160ms ease;
+}
+
+.toast-success { border-color: color-mix(in srgb, var(--success) 40%, var(--border)); background: color-mix(in srgb, var(--success-soft) 70%, var(--surface-raised)); }
+.toast-error { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: color-mix(in srgb, var(--danger-soft) 70%, var(--surface-raised)); }
+.toast-warning { border-color: color-mix(in srgb, var(--warning) 40%, var(--border)); background: color-mix(in srgb, var(--warning-soft) 70%, var(--surface-raised)); }
+.toast-info { border-color: color-mix(in srgb, var(--primary) 30%, var(--border)); background: color-mix(in srgb, var(--primary-soft) 70%, var(--surface-raised)); }
+
+.toast-icon { display: inline-flex; align-items: center; justify-content: center; margin-top: 2px; color: currentColor; }
+.toast-message { flex: 1; font-size: 0.95rem; line-height: 1.4; }
+.toast-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.toast-close:hover { background: var(--surface-2); color: var(--text); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 640px) {
+  .toast-viewport {
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    top: calc(12px + env(safe-area-inset-top, 0px));
+  }
+  .toast { min-width: 0; max-width: 100%; }
+}
+
+/* Exam instructions spacing */
+.exam-instructions-details { margin-bottom: var(--space-3); }
+.exam-instructions-rules { margin-top: var(--space-3); }
+
+@media (max-width: 640px) {
+  .exam-instructions-details { margin-bottom: var(--space-2); }
+  .exam-instructions-rules { margin-top: var(--space-2); }
+}

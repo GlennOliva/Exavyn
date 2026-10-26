@@ -5,6 +5,7 @@ import { ThemeSurface } from './features/theme/ThemeSurface';
 import { AppShell } from './components/layout/AppShell';
 import { RequireAuth, RequireRole, RoleHomeRedirect } from './components/guards';
 import { EmptyState } from './components/ui';
+import { ToastProvider } from './components/toast/ToastProvider';
 
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
@@ -134,7 +135,9 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
       </AuthProvider>
     </ThemeProvider>
   );

@@ -464,6 +464,11 @@ export type Database = {
       get_feedback_unread_counts: { Args: Record<string, never>; Returns: Json };
       get_feedback_summary: { Args: { p_exam_id: string }; Returns: Json };
       recompute_answered_count: { Args: { p_attempt_id: string }; Returns: number };
+      request_feedback_attachment_upload: { Args: { p_feedback_id: string; p_file_name: string; p_mime_type: string; p_size_bytes: number; p_content_type: string }; Returns: Json };
+      confirm_feedback_attachment_upload: { Args: { p_attachment_id: string; p_feedback_id: string }; Returns: undefined };
+      get_feedback_attachment_url: { Args: { p_attachment_id: string; p_feedback_id: string }; Returns: string };
+      list_feedback_attachments: { Args: { p_feedback_id: string }; Returns: Json };
+      delete_feedback_attachment: { Args: { p_attachment_id: string; p_feedback_id: string }; Returns: undefined };
     };
     Enums: {
       app_role: AppRole;
@@ -478,4 +483,18 @@ export type Database = {
     };
     CompositeTypes: Record<string, never>;
   };
+};
+
+// Feedback attachments
+export type FeedbackAttachmentRow = {
+  id: string;
+  feedback_id: string;
+  object_path: string;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  uploaded_by: string;
+  created_at: string;
 };

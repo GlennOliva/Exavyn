@@ -6,6 +6,9 @@ import { useAuth } from '../auth/AuthContext';
 import { listStudentEnrollmentsPage } from '../courses/api';
 import { listStudentExamsPage } from '../exams/api';
 import { submitFeedback } from './api';
+import { useToasts } from '../../components/toast/ToastProvider';
+import { isAllowedMime, MAX_FILES, MAX_SIZE_BYTES, readFileSignature, validateFileName } from '../attachments/validation';
+import { confirmFeedbackAttachmentUpload, requestFeedbackAttachmentUpload } from '../attachments/api';
 
 interface CourseOption {
   id: string;
@@ -19,6 +22,15 @@ interface ExamOption {
   course_id: string;
   course_title?: string;
   course_code?: string;
+}
+
+interface PendingAttachment {
+  id: string;
+  file: File;
+  preview: string;
+  status: 'uploading' | 'uploaded' | 'error';
+  error?: string;
+  attachmentId?: string;
 }
 
 export function FeedbackForm({
@@ -35,6 +47,7 @@ export function FeedbackForm({
   onSubmitted?: () => void;
 }) {
   const { user } = useAuth();
+  const { toast } = useToasts();
   const isStudent = user?.role === 'student';
   const [category, setCategory] = useState<FeedbackCategory>(postExam ? 'exam_concern' : 'suggestion');
   const [subject, setSubject] = useState(postExam ? 'Exam feedback' : '');
@@ -51,6 +64,8 @@ export function FeedbackForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const requestId = useRef(crypto.randomUUID());
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [, setCreatedFeedbackId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isStudent || postExam) return;
@@ -110,6 +125,73 @@ export function FeedbackForm({
     if (exam?.course_id) setRelatedCourse(exam.course_id);
   };
 
+  const addAttachments = async (files: FileList | null) => {
+    if (!files) return;
+    if (attachments.length >= MAX_FILES) {
+      setError('Maximum 3 screenshots allowed.');
+      return;
+    }
+    const list = Array.from(files).slice(0, MAX_FILES - attachments.length);
+    for (const file of list) {
+      if (file.size > MAX_SIZE_BYTES) {
+        setError('Each screenshot must be 5 MB or smaller.');
+        toast({ tone: 'error', message: 'Screenshot upload failed: file too large (max 5 MB).' });
+        continue;
+      }
+      if (!validateFileName(file.name) || !isAllowedMime(file.type)) {
+        setError('Only PNG, JPEG, and WebP images are allowed. SVG and executables are rejected.');
+        toast({ tone: 'error', message: 'Screenshot upload failed: unsupported file type.' });
+        continue;
+      }
+      const sigOk = await readFileSignature(file);
+      if (!sigOk) {
+        setError('File signature validation failed. Only valid PNG, JPEG, or WebP images are allowed.');
+        toast({ tone: 'error', message: 'Screenshot upload failed: invalid image signature.' });
+        continue;
+      }
+      const id = crypto.randomUUID();
+      const preview = URL.createObjectURL(file);
+      setAttachments((prev) => [...prev, { id, file, preview, status: 'uploading' }]);
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments((prev) => {
+      const att = prev.find((p) => p.id === id);
+      if (att) URL.revokeObjectURL(att.preview);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  const uploadAttachmentsForFeedback = async (feedbackId: string) => {
+    for (const att of attachments) {
+      if (att.status === 'uploaded' && att.attachmentId) continue;
+      try {
+        const req = await requestFeedbackAttachmentUpload({
+          feedbackId,
+          fileName: att.file.name,
+          mimeType: att.file.type,
+          sizeBytes: att.file.size,
+          contentType: att.file.type,
+        });
+        // Upload via signed URL if provided; fallback to direct upload not possible with private bucket
+        // Try PUT to upload_url
+        const putRes = await fetch(req.upload_url, {
+          method: 'PUT',
+          headers: { 'Content-Type': att.file.type },
+          body: att.file,
+        });
+        if (!putRes.ok) throw new Error('upload_failed');
+        await confirmFeedbackAttachmentUpload({ attachmentId: req.attachment_id, feedbackId });
+        setAttachments((prev) => prev.map((p) => (p.id === att.id ? { ...p, status: 'uploaded', attachmentId: req.attachment_id } : p)));
+        toast({ tone: 'success', message: 'Screenshot attached.' });
+      } catch {
+        setAttachments((prev) => prev.map((p) => (p.id === att.id ? { ...p, status: 'error', error: 'Upload failed' } : p)));
+        toast({ tone: 'error', message: 'Screenshot upload failed.' });
+      }
+    }
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
@@ -128,7 +210,7 @@ export function FeedbackForm({
         : 'administration';
     setBusy(true);
     try {
-      await submitFeedback({
+      const feedbackId = await submitFeedback({
         category,
         subject: subject.trim(),
         message: message.trim(),
@@ -140,15 +222,26 @@ export function FeedbackForm({
         requestId: requestId.current,
       });
       requestId.current = crypto.randomUUID();
+      if (attachments.length > 0) {
+        await uploadAttachmentsForFeedback(feedbackId);
+      }
       setMessage('');
+      setSubject(postExam ? 'Exam feedback' : '');
+      setRating('');
+      // Clear attachments only after confirmation of success
+      attachments.forEach((a) => URL.revokeObjectURL(a.preview));
+      setAttachments([]);
+      setCreatedFeedbackId(null);
       setNotice(
         recipient === 'course_teacher'
-          ? 'Feedback sent to the course teacher. It is linked to your account so you can track the response.'
-          : 'Feedback sent to administration. It is linked to your account so you can track the response.',
+          ? 'Feedback submitted successfully. It is linked to your account so you can track the response.'
+          : 'Feedback submitted successfully. It is linked to your account so you can track the response.',
       );
+      toast({ tone: 'success', message: 'Feedback submitted successfully.' });
       onSubmitted?.();
     } catch (err) {
       setError(errorMessage(err));
+      toast({ tone: 'error', message: 'Feedback submission failed.' });
     } finally {
       setBusy(false);
     }
@@ -222,6 +315,30 @@ export function FeedbackForm({
       <Field label="Message" htmlFor="feedback-message" hint="10–5000 characters">
         <TextArea id="feedback-message" value={message} minLength={10} maxLength={5000} required rows={5} onChange={(e) => setMessage(e.target.value)} />
       </Field>
+      {isStudent ? (
+        <Field label="Screenshots (optional)" htmlFor="feedback-attachments" hint="PNG, JPEG, or WebP. Max 3 files, 5 MB each. Avoid passwords, recovery links, or unrelated personal information.">
+          <input
+            id="feedback-attachments"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            multiple
+            onChange={(e) => void addAttachments(e.target.files)}
+            disabled={attachments.length >= MAX_FILES}
+          />
+          {attachments.length > 0 ? (
+            <div className="row" style={{ flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
+              {attachments.map((att) => (
+                <div key={att.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 8, width: 200 }}>
+                  <img src={att.preview} alt="Screenshot preview" style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 6 }} />
+                  <div className="small muted">{(att.file.size / 1024 / 1024).toFixed(2)} MB</div>
+                  <div className="small">{att.status === 'uploading' ? 'Uploading…' : att.status === 'uploaded' ? 'Attached' : att.error ?? 'Error'}</div>
+                  <Button size="sm" variant="ghost" onClick={() => removeAttachment(att.id)} disabled={busy && att.status === 'uploading'}>Remove</Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </Field>
+      ) : null}
       <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Submitting…' : 'Submit feedback'}</Button>
     </form>
   );
