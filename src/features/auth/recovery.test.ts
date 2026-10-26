@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  clearRecoveryLocation,
   normalizePublicSiteUrl,
   parseRecoveryLinkFailure,
   passwordResetRedirectUrl,
@@ -73,5 +74,25 @@ describe('recovery link failures', () => {
     expect(failure?.message).toBe(
       'This password reset link is invalid. Request a new reset email to continue.',
     );
+  });
+});
+
+describe('recovery location cleanup', () => {
+  it('removes a consumed recovery fragment with no token parameters left', () => {
+    window.history.replaceState(null, '', '/update-password#');
+    clearRecoveryLocation();
+    expect(window.location.hash).toBe('');
+    expect(window.location.href).not.toContain('#');
+  });
+
+  it('removes token and error fragments', () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/update-password#access_token=opaque&refresh_token=opaque',
+    );
+    clearRecoveryLocation();
+    expect(window.location.href).not.toContain('access_token');
+    expect(window.location.href).not.toContain('refresh_token');
   });
 });

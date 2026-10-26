@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -47,6 +47,25 @@ describe('UpdatePasswordPage', () => {
     );
     expect(window.location.hash).toBe('');
     expect(window.location.href).not.toContain('access_denied');
+  });
+
+  it('removes a consumed recovery fragment once the session is established', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/update-password#access_token=opaque&refresh_token=opaque&type=recovery',
+    );
+    vi.mocked(useAuth).mockReturnValue({
+      changePassword: vi.fn(),
+      session: { access_token: 'opaque' },
+      loading: false,
+    } as never);
+
+    renderPage();
+
+    await waitFor(() => expect(window.location.hash).toBe(''));
+    expect(window.location.href).not.toContain('access_token');
+    expect(window.location.href).not.toContain('refresh_token');
   });
 
   it('does not offer the form without a recovery session', () => {

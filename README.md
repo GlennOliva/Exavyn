@@ -438,7 +438,7 @@ acceptance matrix, fixture/cleanup policy).
 
 Local (deterministic) — **pass**:
 
-- `tsc -b`, ESLint, `vitest` (138/138), `vite build` all pass.
+- `tsc -b`, ESLint, `vitest` (141/141), `vite build` all pass.
 - Hosted suites (`npm run test:hosted`, exit 0): RLS 36/36, workflow 65/65,
   concurrency 5/5, finality 10/10, feedback 18/18, teacher search 12/12
   (146/146).
@@ -633,11 +633,11 @@ development; do not add a production wildcard). Until that is done,
 production redirect falls back to `http://localhost:3000`. Fresh recovery-email
 delivery also remains unverified because no authorized test inbox is available.
 
-**Verification for these fixes:** unit **138/138**; hosted **146/146**; Chromium
+**Verification for these fixes:** unit **141/141**; hosted **146/146**; Chromium
 **28 passed / 1 skipped**; Firefox recovery/search **2/2**; production public
 **10/10**; production teacher search **1/1**; production expired-recovery page
 **1/1**; typecheck, lint, and build clean. Production serves
-`index-BLAhqpOA.js` / `index-DqhDLp1g.css`.
+`index-8tlsis3P.js` / `index-DqhDLp1g.css`.
 
 ## Completion report
 
@@ -654,7 +654,7 @@ to project `tddmtdhhckykwnoydvjc` without a reset and recorded in
 `supabase_migrations.schema_migrations`.
 
 **Checks actually run in this repository:**
-`npm run typecheck` pass · `npm run lint` pass · `npm test` **138/138** ·
+`npm run typecheck` pass · `npm run lint` pass · `npm test` **141/141** ·
 `npm run build` pass (one non-blocking chunk-size warning) ·
 Playwright Chromium **28 passed / 1 skipped**, Firefox public smoke **12/12**
 plus recovery/search **2/2**, and answer integrity **1/1** locally. The dedicated credential-gated sidebar/
