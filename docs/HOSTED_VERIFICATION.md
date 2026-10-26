@@ -10,10 +10,10 @@ workflow, and the concurrency/finality guarantees.
 > `tddmtdhhckykwnoydvjc`. Re-verified live on 2026-10-26 after the teacher-search
 > and recovery fixes: RLS **36/36**, workflow **65/65**, concurrency **5/5**,
 > finality **10/10**, feedback **18/18**, teacher search **12/12** (hosted total
-> **146/146**); unit **138/138**; Chromium **28 passed / 1 skipped**; Firefox
+> **146/146**); unit **141/141**; Chromium **28 passed / 1 skipped**; Firefox
 > public smoke **12/12** plus recovery/search **2/2**; typecheck/lint/build
 > clean. Production is deployed at `https://exavyn.vercel.app` (assets
-> `index-BLAhqpOA.js` / `index-DqhDLp1g.css`); production public **10/10**,
+> `index-8tlsis3P.js` / `index-DqhDLp1g.css`); production public **10/10**,
 > teacher search **1/1**, and expired-recovery **1/1** passed.
 > Forward migrations `0013`-`0026` are applied without a reset and recorded.
 > **Recovery config remains blocked:** hosted Auth Site URL is still
@@ -598,7 +598,7 @@ server environment present (`.env.server.local`).
 
 ```
 Environment: hosted test project tddmtdhhckykwnoydvjc   Node 24.14.0
-Local checks (offline):  typecheck PASS, lint PASS, unit 138/138, build PASS,
+Local checks (offline):  typecheck PASS, lint PASS, unit 141/141, build PASS,
                          Chromium 28 passed / 1 skipped; Firefox public smoke
                          12/12 plus recovery/search 2/2 (authenticated/admin
                          specs use fixture E2E_* creds)
@@ -983,7 +983,7 @@ UUID in `attempt_answers`, the matching grading input, and the matching
 `get_attempt_review` payload. That proof ran on the previous V2 deployment
 (`index-B9zquRSL.js` / `index-WtXLvfJy.css`). The subsequent Cyber-Tribal
 deployment served `index-Cyby463L.js` / `index-DqhDLp1g.css`; the current
-teacher-search/recovery deployment serves `index-BLAhqpOA.js` /
+teacher-search/recovery deployment serves `index-8tlsis3P.js` /
 `index-DqhDLp1g.css`. Those UI fixes changed no attempt, auth-token, or
 answer-integrity code; production public **10/10**, teacher search **1/1**, and
 expired recovery **1/1** were rerun against the current assets.

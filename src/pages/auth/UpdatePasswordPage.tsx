@@ -30,8 +30,11 @@ export function UpdatePasswordPage() {
   });
 
   useEffect(() => {
-    if (linkFailure) clearRecoveryLocation();
-  }, [linkFailure]);
+    // The auth client must consume the implicit-flow fragment first. Once a
+    // recovery session is ready (or the callback failed), remove the sensitive
+    // token/error parameters from the address bar and browser history.
+    if (linkFailure || (!loading && session)) clearRecoveryLocation();
+  }, [linkFailure, loading, session]);
 
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();

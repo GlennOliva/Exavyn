@@ -71,10 +71,11 @@ export function parseRecoveryLinkFailure(
   return { code: code || 'invalid_link', message: INVALID_MESSAGE };
 }
 
-/** Remove recovery error parameters without retaining tokens in browser history. */
+/** Remove recovery parameters, including a consumed empty fragment, from history. */
 export function clearRecoveryLocation(): void {
   if (typeof window === 'undefined') return;
-  if (window.location.hash || window.location.search) {
+  const hasFragment = window.location.hash || window.location.href.includes('#');
+  if (hasFragment || window.location.search) {
     window.history.replaceState(null, '', window.location.pathname);
   }
 }
