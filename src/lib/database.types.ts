@@ -349,6 +349,16 @@ export type Database = {
         Args: { p_search?: string; p_page?: number; p_page_size?: number };
         Returns: Json;
       };
+      get_course_enrollments_page: {
+        Args: {
+          p_course_id: string;
+          p_search?: string;
+          p_status?: EnrollmentStatus | null;
+          p_page?: number;
+          p_page_size?: number;
+        };
+        Returns: Json;
+      };
       start_attempt: {
         Args: { p_exam_id: string; p_current_token?: string | null };
         Returns: Json;

@@ -34,6 +34,7 @@ import {
 import { errorMessage } from '../../lib/errors';
 import { formatDateTime } from '../../lib/format';
 import { useClampPage, usePageState } from '../../lib/pagination';
+import { useDebouncedValue } from '../../lib/useDebouncedValue';
 import { Pagination } from '../../components/Pagination';
 import type { EnrollmentRow } from '../../lib/database.types';
 import type { CourseRow } from '../../lib/database.types';
@@ -58,16 +59,25 @@ export function TeacherCourseDetailPage() {
     | 'published'
     | 'archived';
 
+  const debouncedEnrollmentQuery = useDebouncedValue(enrollmentsTable.q, 300);
+  const enrollmentSearchPending = enrollmentsTable.q !== debouncedEnrollmentQuery;
+
   const course = useAsync(() => getCourse(courseId), [courseId]);
   const enrollments = useAsync(
     () =>
       listCourseEnrollmentsPage(courseId, {
         page: enrollmentsTable.page,
         pageSize: enrollmentsTable.pageSize,
-        q: enrollmentsTable.q,
+        q: debouncedEnrollmentQuery,
         status: enrollmentStatus,
       }),
-    [courseId, enrollmentsTable.page, enrollmentsTable.pageSize, enrollmentsTable.q, enrollmentStatus],
+    [
+      courseId,
+      enrollmentsTable.page,
+      enrollmentsTable.pageSize,
+      debouncedEnrollmentQuery,
+      enrollmentStatus,
+    ],
   );
   const exams = useAsync(
     () =>
@@ -83,6 +93,9 @@ export function TeacherCourseDetailPage() {
   useClampPage(examsTable.page, examsTable.pageSize, exams.data?.total ?? 0, examsTable.setPage);
   const enrollmentRows = enrollments.data?.rows ?? [];
   const examRows = exams.data?.rows ?? [];
+  const enrollmentsBusy = enrollments.loading || enrollmentSearchPending;
+  const enrollmentFiltersActive =
+    debouncedEnrollmentQuery.trim().length > 0 || enrollmentStatus !== 'all';
 
   const run = async (fn: () => Promise<unknown>, message: string) => {
     setActionError(null);
@@ -199,8 +212,10 @@ export function TeacherCourseDetailPage() {
       <Card>
         <div className="row-between">
           <h2>Enrollments</h2>
-          {enrollments.data ? (
-            <span className="muted small">{enrollments.data.total} record(s)</span>
+          {enrollments.data && !enrollmentsBusy ? (
+            <span className="muted small" aria-live="polite">
+              {enrollments.data.total} record(s)
+            </span>
           ) : null}
         </div>
         <div className="row">
@@ -225,14 +240,26 @@ export function TeacherCourseDetailPage() {
             <option value="withdrawn">withdrawn</option>
           </select>
         </div>
-        {enrollments.loading ? <PageSpinner /> : null}
+        {enrollmentsBusy ? <PageSpinner /> : null}
         {enrollments.error ? <Alert tone="danger">{enrollments.error}</Alert> : null}
-        {enrollments.data && enrollmentRows.length === 0 ? (
-          <EmptyState title="No enrollment requests match">
-            <p className="muted">Share the join code with your students.</p>
-          </EmptyState>
+        {!enrollmentsBusy && enrollments.data && enrollmentRows.length === 0 ? (
+          enrollmentFiltersActive ? (
+            <EmptyState title="No matching enrollments">
+              <p className="muted">Try another name or email, or clear the current filters.</p>
+              <Button
+                size="sm"
+                onClick={() => enrollmentsTable.clearFilters(['status'])}
+              >
+                Clear search and filters
+              </Button>
+            </EmptyState>
+          ) : (
+            <EmptyState title="No enrollment requests yet">
+              <p className="muted">Share the join code with your students.</p>
+            </EmptyState>
+          )
         ) : null}
-        {enrollmentRows.length > 0 ? (
+        {!enrollmentsBusy && enrollmentRows.length > 0 ? (
           <div className="table-wrap">
             <table>
               <thead>
@@ -304,7 +331,7 @@ export function TeacherCourseDetailPage() {
             </table>
           </div>
         ) : null}
-        {enrollments.data ? (
+        {enrollments.data && !enrollmentsBusy ? (
           <Pagination
             label="enrollments"
             page={enrollmentsTable.page}

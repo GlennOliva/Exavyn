@@ -7,23 +7,26 @@ steps here prove the database-enforced security model, the authenticated exam
 workflow, and the concurrency/finality guarantees.
 
 > Status: **executed** against the dedicated hosted test project
-> `tddmtdhhckykwnoydvjc`. Re-verified live on 2026-10-25:
-> RLS **36/36**, workflow **65/65**, concurrency **5/5**, finality **10/10**,
-> feedback **18/18** (hosted total **134/134**), unit **124/124**, Chromium
-> **26 passed / 1 skipped**, Firefox public smoke **12/12**, plus dedicated
-> sidebar/admin **4/4**, authenticated theme **2/2**, feedback UI **3/3**, and
-> answer-integrity **1/1**, and typecheck/lint/build clean. The Cyber-Tribal
-> frontend is deployed at `https://exavyn.vercel.app` (production assets
-> `index-Cyby463L.js` / `index-DqhDLp1g.css`); production public smoke is
-> **10/10** and authenticated shell/theme/feedback smoke is **9/9**.
-> Forward migrations `0013`-`0025` are applied and recorded. Email confirmation was then
-> **disabled** on the hosted project (scoped `config push`), so public sign-up
-> returns a live session and is not gated by the email sender; a fresh anon-key
-> signup was verified live and the probe account deleted. See §10 for counts and
-> the bugs found and fixed. OS-level app switches (Command+Tab / Alt+Tab) are
-> covered by a **manual checklist** (§5) and are **UNVERIFIED** until run on that
-> OS. Real iPhone/iPad hardware verification is also **UNVERIFIED**; runtime
-> capability tests and browser fallback checks do not establish real-device support.
+> `tddmtdhhckykwnoydvjc`. Re-verified live on 2026-10-26 after the teacher-search
+> and recovery fixes: RLS **36/36**, workflow **65/65**, concurrency **5/5**,
+> finality **10/10**, feedback **18/18**, teacher search **12/12** (hosted total
+> **146/146**); unit **138/138**; Chromium **28 passed / 1 skipped**; Firefox
+> public smoke **12/12** plus recovery/search **2/2**; typecheck/lint/build
+> clean. Production is deployed at `https://exavyn.vercel.app` (assets
+> `index-BLAhqpOA.js` / `index-DqhDLp1g.css`); production public **10/10**,
+> teacher search **1/1**, and expired-recovery **1/1** passed.
+> Forward migrations `0013`-`0026` are applied without a reset and recorded.
+> **Recovery config remains blocked:** hosted Auth Site URL is still
+> `http://localhost:3000` and the production redirect is not allowlisted, so
+> valid production recovery emails still fall back to localhost until the
+> operator changes Authentication → URL Configuration (exact steps in §10).
+> Email confirmation remains disabled on the hosted project (scoped config
+> push), so public sign-up returns a live session. See §10 for counts, causes,
+> and the unresolved operator action. OS-level app switches
+> (Command+Tab / Alt+Tab) are covered by a **manual checklist** (§5) and are
+> **UNVERIFIED** until run on that OS. Real iPhone/iPad hardware verification is
+> also **UNVERIFIED**; runtime capability tests and browser fallback checks do
+> not establish real-device support.
 
 ---
 
@@ -86,6 +89,7 @@ never put it in a `VITE_*` variable.
 | `VITE_SUPABASE_URL` | Project URL |
 | `VITE_SUPABASE_ANON_KEY` | Publishable / anon key |
 | `VITE_APP_NAME` | Optional display name |
+| `VITE_PUBLIC_SITE_URL` | Canonical origin for password-recovery redirects; set to `https://exavyn.vercel.app` in Vercel Production. Unset locally so recovery returns to the dev origin. |
 
 ### Server-only secrets — `.env.server.local` (gitignored; template `.env.server.example`)
 
@@ -107,7 +111,7 @@ tools load it automatically — the Node suites (`supabase/tests/lib/harness.mjs
 | `SUPABASE_DB_PASSWORD` | `db push` / `db pull` / `db dump` only | Project Settings → Database |
 | `BOOTSTRAP_ADMIN_TOKEN` | `bootstrap-admin` (one time) | generate yourself, e.g. `openssl rand -hex 32`; rotate/remove after |
 | `SEED_PASSWORD` | seeder + `test:rls` | optional; default `ExamDemo!234` |
-| `E2E_SUPABASE_CONFIGURED`, `E2E_STUDENT_EMAIL`, `E2E_STUDENT_PASSWORD`, `E2E_EXAM_ID`, `E2E_BASE_URL` | authenticated Playwright checks | your seeded student + published exam |
+| `E2E_SUPABASE_CONFIGURED`, `E2E_STUDENT_EMAIL`, `E2E_STUDENT_PASSWORD`, `E2E_TEACHER_EMAIL`, `E2E_TEACHER_PASSWORD`, `E2E_EXAM_ID`, `E2E_COURSE_ID`, `E2E_BASE_URL` | authenticated Playwright checks | `npm run e2e:fixture`, or your seeded teacher/student + published exam/course |
 
 Confirm what is present **without printing any value**:
 
@@ -302,13 +306,17 @@ The seeder and the RLS suite share the fixture contract in `scripts/seed-demo.mj
 | `npm run test:workflow` | Full authenticated workflow + immutability + release policy + answer review + pass threshold | yes |
 | `npm run test:concurrency` | Races, duplicate-episode dedup, controller recovery, expiry | yes |
 | `npm run test:finality` | Final-score immutability: idempotent submit, no user-facing rewrite/delete | yes |
-| `npm run test:hosted` | RLS → workflow → concurrency → finality, sequentially | yes |
+| `npm run test:feedback` | Feedback routing, deduplication, unread state, and role/private-note isolation | yes |
+| `npm run test:teacher-search` | Teacher enrollment search literals, status/pagination/count, cross-teacher and anonymous denial | yes |
+| `npm run test:hosted` | RLS → workflow → concurrency → finality → feedback → teacher search, sequentially | yes |
 | `npm run test:e2e` | Public-surface + registration smoke (always) + gated authenticated/admin checks | no* |
 
 \* The registration smoke runs offline (the endpoint is intercepted). The
 authenticated UI checks additionally require `E2E_SUPABASE_CONFIGURED=true`,
 `E2E_STUDENT_EMAIL`, `E2E_STUDENT_PASSWORD`, and (for the full flow)
-`E2E_EXAM_ID`; the admin route check requires `E2E_ADMIN_EMAIL` /
+`E2E_EXAM_ID`; the teacher-search check requires `E2E_TEACHER_EMAIL`,
+`E2E_TEACHER_PASSWORD`, and `E2E_COURSE_ID`; the admin route check requires
+`E2E_ADMIN_EMAIL` /
 `E2E_ADMIN_PASSWORD` (set in-process by `npm run admin:provision -- --browser`).
 They skip silently otherwise.
 
@@ -585,21 +593,23 @@ Immutable leftovers:         <count from manifest>
 
 ## 10. Verification results (this workspace)
 
-Re-verified live on **2026-10-25** against `tddmtdhhckykwnoydvjc` with the full
+Re-verified live on **2026-10-26** against `tddmtdhhckykwnoydvjc` with the full
 server environment present (`.env.server.local`).
 
 ```
 Environment: hosted test project tddmtdhhckykwnoydvjc   Node 24.14.0
-Local checks (offline):  typecheck PASS, lint PASS, unit 124/124, build PASS,
-                         Chromium 26 passed / 1 skipped; Firefox public smoke
-                         12/12 (public + registration + branding run without
-                         credentials; authenticated/admin specs use E2E_* creds)
+Local checks (offline):  typecheck PASS, lint PASS, unit 138/138, build PASS,
+                         Chromium 28 passed / 1 skipped; Firefox public smoke
+                         12/12 plus recovery/search 2/2 (authenticated/admin
+                         specs use fixture E2E_* creds)
 Dedicated browser specs: sidebar/admin 4/4, theme 2/2, feedback 3/3,
                          answer integrity 1/1; all green locally and against
                          https://exavyn.vercel.app
-Production smoke:        public 10/10, authenticated shell/theme/feedback 9/9
+Production smoke:        public 10/10, teacher enrollment search 1/1,
+                         expired-recovery 1/1
+Local valid recovery:    PASS (generated link -> new password -> sign-in)
 
-Hosted checks (this session): `npm run test:hosted` exit 0
+Hosted checks (this session): `npm run test:hosted` exit 0 (146/146)
   rls                    36/36   PASS   (real user tokens; anon key only;
                                          join-code column confidentiality,
                                          non-owner RPC denial,
@@ -649,6 +659,12 @@ Hosted checks (this session): `npm run test:hosted` exit 0
                                           draft-exam rejection, no key leakage,
                                           unenrolled rejection, suspended staff,
                                           admin global access)
+  teacher search          12/12  PASS   (authorized empty/partial name/email,
+                                         mixed case, literal %/_/apostrophe/
+                                         comma/parentheses, status composition,
+                                         filtered count before pagination,
+                                         stable ordering, clear-restores, cross-
+                                         teacher 42501, anonymous denial)
 
 Authenticated UI e2e (isolated fixture; Chromium, headed):
   3/3                     PASS   dedicated teacher + student + fresh exam,
@@ -686,6 +702,22 @@ Answer-integrity e2e (isolated fixture; Chromium, local + production): 1/1 PASS
                                  B -> C, delayed save, explicit clear, reload,
                                  exact graded review, and answered/unanswered/
                                  marked progress counters.
+
+Teacher enrollment search e2e (fixture; Chromium local + production, Firefox):
+  PASS                           partial name, uppercase email, no-result and
+                                 literal-% empty states, clear button restores
+                                 all rows, pending -> approved filter, no
+                                 PostgREST parser text, and exact count.
+
+Password recovery:
+  expired-link UI (Chromium + Firefox, local + production)  PASS
+                                 safe message, no form, no hash/query leakage,
+                                 request-new-email link
+  valid-link local flow          PASS
+                                 generated one-time link -> password form ->
+                                 update -> sign-in with new password
+  production valid-email flow    BLOCKED until hosted Auth Site URL/allowlist
+                                 is changed; no authorized mailbox available.
 
 Registration smoke e2e (Chromium + Firefox): 4/4 PASS
                                  double submit -> exactly one /auth/v1/signup
@@ -727,7 +759,7 @@ Preceding this session (user tokens only):
   CLI / secrets           PASS   (`secrets list` names, digests only)
 
 Migrations:
-  migration history       PASS    forward migrations through 2026010100025
+  migration history       PASS    forward migrations through 2026010100026
                                   applied without reset and recorded in
                                   supabase_migrations.schema_migrations.
 
@@ -737,14 +769,74 @@ Device checks:
                                      physical iOS hardware was available.
 
 Skipped (NOT counted as passed):
-  default e2e authenticated spec          6 skipped  (gated on E2E_* creds)
-  default e2e admin spec                  4 skipped  (gated on E2E_ADMIN_* creds)
-  Firefox authenticated/admin flow        not run    (Chromium-only by design)
+  answer-integrity e2e                     1 skipped  (separate opt-in gate)
+  Firefox authenticated/admin flow         not run    (Chromium-only by design)
+
+Blocked (NOT counted as passed):
+  production valid recovery email          hosted Auth Site URL/allowlist has no
+                                           management access; default remains
+                                           http://localhost:3000
+  fresh recovery-email delivery            no authorized test inbox
 
 Failed:                  none
 Immutable leftovers:     expected (published versions / finalized attempts /
                          violation events cannot be deleted by design)
 ```
+
+### Teacher search and password recovery (2026-10-26)
+
+**Teacher enrollment search.** The failing query put an embedded relationship
+alias inside PostgREST's logical tree:
+`.or('student.full_name.ilike.%q%,student.email.ilike.%q%')`. PostgREST rejects
+it with `PGRST100`; removing the alias produces `42703` because
+`enrollments` has no `full_name`/`email` column. Migration
+`2026010100026_teacher_enrollment_search.sql` adds
+`public.get_course_enrollments_page(p_course_id, p_search, p_status, p_page,
+p_page_size)`. The `SECURITY DEFINER` function requires an active account and
+course ownership (or admin), matches name/email with literal case-insensitive
+`strpos(lower(...), lower(...))`, counts before pagination, filters status, and
+orders by `requested_at DESC, id DESC`. `%`, `_`, quotes, commas, and
+parentheses are data, not filter syntax. The UI debounces 300 ms, hides stale
+rows/counts while a query settles, resets to page 1, and clears search + status
+atomically.
+
+**Password recovery.** `resetPasswordForEmail` now uses the compiled
+`VITE_PUBLIC_SITE_URL` when it is a valid non-localhost HTTP(S) origin, with the
+current origin as the local fallback. Vercel Production sets
+`VITE_PUBLIC_SITE_URL=https://exavyn.vercel.app` (confirmed in the deployed
+bundle). `UpdatePasswordPage` separately models an invalid/expired link versus a
+valid recovery session, maps `otp_expired` / `session_not_found` /
+`access_denied` to safe actionable copy, removes sensitive hash/query data, and
+only reports success after `updateUser` resolves. A generated local recovery
+link completed form → update → sign-in successfully; the expired state passes on
+production.
+
+**Operator action still required (blocked — no management access).** Hosted
+Auth still returns `http://localhost:3000` for a production recovery request:
+
+```
+npm run check:auth-redirect -- <disposable-test-email>
+Auth default redirect : http://localhost:3000
+Requested redirect    : https://exavyn.vercel.app/update-password
+Returned redirect     : http://localhost:3000
+FAIL
+```
+
+In Supabase Dashboard → Authentication → URL Configuration:
+
+1. Set **Site URL** to `https://exavyn.vercel.app`.
+2. Add exact redirect `https://exavyn.vercel.app/update-password`.
+3. Keep `http://localhost:5173/update-password` and
+   `http://localhost:3000/update-password` for local development.
+4. Do not add a production wildcard. Re-run `check:auth-redirect`; it must print
+   `PASS`.
+
+The CLI account cannot access this project (`SUPABASE_ACCESS_TOKEN` absent;
+`supabase link` returns “Your account does not have the necessary privileges”).
+Fresh production recovery-email delivery is also unverified because no
+authorized test inbox is available. The expired-link UI, local valid-link flow,
+code path, and deployed environment value are verified; the remote Auth setting
+is not.
 
 ### V2 shell, feedback routing, progress, and exact-point scoring (2026-10-25)
 
@@ -889,10 +981,12 @@ the verified Vercel preview: **1/1 passed**. The trace asserts distinct request
 UUIDs for B and C, revisions 1 and 2, accepted RPC responses, the final C option
 UUID in `attempt_answers`, the matching grading input, and the matching
 `get_attempt_review` payload. That proof ran on the previous V2 deployment
-(`index-B9zquRSL.js` / `index-WtXLvfJy.css`). The current Cyber-Tribal deployment
-serves `index-Cyby463L.js` / `index-DqhDLp1g.css`; the redesign changed no
-attempt, auth, or answer-integrity code, and production public **10/10** plus
-authenticated shell/theme/feedback **9/9** were rerun against the current assets.
+(`index-B9zquRSL.js` / `index-WtXLvfJy.css`). The subsequent Cyber-Tribal
+deployment served `index-Cyby463L.js` / `index-DqhDLp1g.css`; the current
+teacher-search/recovery deployment serves `index-BLAhqpOA.js` /
+`index-DqhDLp1g.css`. Those UI fixes changed no attempt, auth-token, or
+answer-integrity code; production public **10/10**, teacher search **1/1**, and
+expired recovery **1/1** were rerun against the current assets.
 The earlier V2 deployment served `index-CCj1TNHp.js`, and the original defect
 before that served `index-DsrZm_K0.js` with request-ID reuse and direct
 question-jump behavior.

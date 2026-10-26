@@ -331,9 +331,9 @@ neutral and are independent of branding.
 | --- | --- | --- |
 | `npm run typecheck` | `tsc -b` (strict; note: `npx tsc --noEmit` does **not** check referenced projects) | green |
 | `npm run lint` | ESLint (TS + React-Hooks classic rules) | green |
-| `npm test` | 124 Vitest unit/component tests | green |
+| `npm test` | 138 Vitest unit/component tests | green |
 | `npm run build` | production build | green |
-| `npm run test:e2e` | Playwright public/auth/branding plus credential-gated exam checks | green: Chromium 26 passed / 1 skipped; Firefox public smoke 12/12 |
+| `npm run test:e2e` | Playwright public/auth/branding plus credential-gated exam checks | green: Chromium 28 passed / 1 skipped; Firefox public smoke 12/12 + recovery/search 2/2 |
 | `E2E_ANSWER_INTEGRITY=true npx playwright test tests/e2e/answer-integrity.exam.spec.ts --project=chromium --workers=1` | Dedicated shuffled B → C, delayed-save, clear, reload, database/grade/review scenario plus progress counters | green: 1/1 local and production |
 | `npx playwright test tests/e2e/sidebar-admin.spec.ts tests/e2e/theme-authenticated.spec.ts tests/e2e/feedback.spec.ts --project=chromium` | Credential-gated sidebar/admin embed, mobile drawer focus, theme persistence, feedback routing/unread | green: 9/9 production |
 | `npm run e2e:fixture` | Provision a self-contained authenticated-e2e fixture (teacher + student + published exam) into `.env.server.local` | used for the headed authenticated flow |
@@ -342,9 +342,11 @@ neutral and are independent of branding.
 | `npm run test:concurrency` | Races, episode dedup, controller recovery, expiry | verified 5/5 live |
 | `npm run test:finality` | Final-score immutability: idempotent submit, no rewrite/delete by any user role | verified 10/10 live |
 | `npm run test:feedback` | Feedback routing, deduplication, unread state, and user/teacher/admin/private-note isolation | verified 18/18 live |
-| `npm run test:hosted` | RLS → workflow → concurrency → finality → feedback | verified live: 134/134, exit 0 |
+| `npm run test:teacher-search` | Teacher enrollment name/email search, literal wildcards, status/pagination/count, cross-teacher and anonymous denial | verified 12/12 live |
+| `npm run test:hosted` | RLS → workflow → concurrency → finality → feedback → teacher search | verified live: 146/146, exit 0 |
 | `npm run check:project` | Reachability + table/RPC presence (browser-safe only) | works with `.env.local` alone |
 | `npm run check:env` | Server-env presence check (values never printed) | reports READY/BLOCKED per capability |
+| `npm run check:auth-redirect -- <test-email>` | Verify hosted Auth honors the production recovery redirect without sending email | currently FAIL: hosted Site URL is still `http://localhost:3000` |
 | `npm run users:confirm` | List/confirm pre-existing **unconfirmed** accounts (dry-run default; `--apply`) | read-only by default; never deletes or resets passwords |
 
 Unit/component coverage highlights: the departure deduplication state machine
@@ -436,14 +438,15 @@ acceptance matrix, fixture/cleanup policy).
 
 Local (deterministic) — **pass**:
 
-- `tsc -b`, ESLint, `vitest` (124/124), `vite build` all pass.
+- `tsc -b`, ESLint, `vitest` (138/138), `vite build` all pass.
 - Hosted suites (`npm run test:hosted`, exit 0): RLS 36/36, workflow 65/65,
-  concurrency 5/5, finality 10/10, feedback 18/18 (134/134).
+  concurrency 5/5, finality 10/10, feedback 18/18, teacher search 12/12
+  (146/146).
 - Playwright public-surface + registration + branding smoke: 12/12 in
   Chromium and 12/12 in Firefox (registration: no duplicate submit; clear 429
   email-limit message; public pages: fixed-dark surface, no appearance controls,
   saved preference untouched, no-flash boot, desktop + 390px mobile).
-- Authenticated Chromium suite: 26 passed / 1 skipped (answer-integrity scenario
+- Authenticated Chromium suite: 28 passed / 1 skipped (answer-integrity scenario
   runs separately when explicitly enabled).
 - Administrator route: `admin@exam.test` signs in and lands on `/admin` (admin e2e 2/2);
   `admin@gmail.com` is provisioned through the token-gated `bootstrap-admin` path
@@ -589,6 +592,53 @@ supabase secrets set BOOTSTRAP_ADMIN_TOKEN=<random> SUPABASE_SERVICE_ROLE_KEY=<.
 - Single-controller semantics mean one tab/device per attempt; recovery after
   a crash is lease-based and documented on the blocking screen.
 
+## Production bug fixes (2026-10-26)
+
+**Teacher enrollment search.** The old query embedded a relationship alias
+inside PostgREST's logical tree:
+`.or('student.full_name.ilike.%q%,student.email.ilike.%q%')`. PostgREST returns
+`PGRST100` for that syntax; dropping the alias fails with `42703` because the
+embedded student columns are not columns of `enrollments`. Migration
+`2026010100026_teacher_enrollment_search.sql` replaces the client-side filter
+with the parameterized, `SECURITY DEFINER` RPC
+`get_course_enrollments_page(...)`. It verifies course ownership (or admin),
+performs literal case-insensitive substring matching over name/email with
+`strpos(lower(...), lower(...))`, filters status, counts before pagination, and
+orders by `requested_at DESC, id DESC`. `%` and `_` are ordinary characters, and
+apostrophes/commas/parentheses never enter a PostgREST filter grammar. Deployed
+UI search is debounced by 300 ms, hides stale rows/counts while a query settles,
+resets to page 1, and offers a working atomic “Clear search and filters” action.
+
+**Password recovery.** The app used the current browser origin for
+`redirectTo`, but hosted Auth still had `Site URL = http://localhost:3000` and
+no production redirect entry, so `generateLink` fell back to localhost. The new
+browser-safe `VITE_PUBLIC_SITE_URL` is set to `https://exavyn.vercel.app` in
+Vercel Production (verified in the deployed bundle); local development
+continues to use its current origin. `UpdatePasswordPage` now distinguishes a
+missing/expired recovery session from a valid one, shows a safe actionable
+message, handles implicit-flow errors such as `otp_expired`, clears sensitive
+hash/query data, confirms success only after `updateUser` succeeds, and never
+turns a failed update into a success claim. A valid local recovery link was
+exercised end-to-end (form → new password → successful sign-in), and the expired
+state is covered in production.
+
+**Still blocked:** hosted Auth Site URL/redirect configuration cannot be changed
+with the available CLI credentials (`SUPABASE_ACCESS_TOKEN` is absent and the
+logged-in CLI profile cannot access this project). In Supabase Dashboard →
+Authentication → URL Configuration, set **Site URL** to
+`https://exavyn.vercel.app` and add the exact redirect
+`https://exavyn.vercel.app/update-password` (keep localhost entries for local
+development; do not add a production wildcard). Until that is done,
+`npm run check:auth-redirect -- <disposable-test-email>` reports that the
+production redirect falls back to `http://localhost:3000`. Fresh recovery-email
+delivery also remains unverified because no authorized test inbox is available.
+
+**Verification for these fixes:** unit **138/138**; hosted **146/146**; Chromium
+**28 passed / 1 skipped**; Firefox recovery/search **2/2**; production public
+**10/10**; production teacher search **1/1**; production expired-recovery page
+**1/1**; typecheck, lint, and build clean. Production serves
+`index-BLAhqpOA.js` / `index-DqhDLp1g.css`.
+
 ## Completion report
 
 **Version 2 implemented:** stable answer mapping/revisions and explicit clear,
@@ -599,27 +649,28 @@ settings, answered/unanswered/marked progress counts, exclusive session leases,
 account-linked role-scoped feedback with two-way unread state, best-effort exam
 interaction restrictions, and fullscreen fallback.
 
-**Migrations:** forward-only `2026010100013` through `2026010100025` were applied
+**Migrations:** forward-only `2026010100013` through `2026010100026` were applied
 to project `tddmtdhhckykwnoydvjc` without a reset and recorded in
 `supabase_migrations.schema_migrations`.
 
 **Checks actually run in this repository:**
-`npm run typecheck` pass · `npm run lint` pass · `npm test` **124/124** ·
+`npm run typecheck` pass · `npm run lint` pass · `npm test` **138/138** ·
 `npm run build` pass (one non-blocking chunk-size warning) ·
-Playwright Chromium **26 passed / 1 skipped**, Firefox public smoke **12/12**,
-and answer integrity **1/1** locally. The dedicated credential-gated sidebar/
+Playwright Chromium **28 passed / 1 skipped**, Firefox public smoke **12/12**
+plus recovery/search **2/2**, and answer integrity **1/1** locally. The dedicated credential-gated sidebar/
 admin **4/4**, authenticated theme **2/2**, and feedback **3/3** are included in
-the Chromium run. The hosted database suites remain **134/134** (no backend or
-auth changes were made for the visual redesign).
+the Chromium run. The current hosted database suites are **146/146** after the
+teacher-search migration; the visual redesign itself changed no backend/auth
+code.
 
 **Hosted steps (dedicated test project `tddmtdhhckykwnoydvjc`):**
-forward migrations through `2026010100025` applied via `supabase db push` (no
-reset); `bootstrap-admin` deployed and run to provision the first admin;
+forward migrations through `2026010100026` applied via `supabase db push`/`db
+push --db-url` (no reset); `bootstrap-admin` deployed and run to provision the first admin;
 `npm run seed` seeded the demo (6 users, course `SOP101`, approved + pending
 enrollment, one 50-item published exam) and is idempotent on re-run. Re-verified
 live: `npm run test:hosted` exit 0 — `rls` **36/36**, `workflow` **65/65**,
-`concurrency` **5/5**, `finality` **10/10**, feedback **18/18**: **134/134
-hosted checks**. A scripted lifecycle **17/17** (start → acquire controller → payload → save →
+`concurrency` **5/5**, `finality` **10/10**, feedback **18/18**, teacher search
+**12/12**: **146/146 hosted checks**. A scripted lifecycle **17/17** (start → acquire controller → payload → save →
 Warning 1 of 2 → duplicate-episode dedup → second departure → immutable
 `violation_limit` result → post-finalize no-ops); Edge Functions confirmed
 ACTIVE (v2) via CLI and probed (`bootstrap-admin` 403 bad token,

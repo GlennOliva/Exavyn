@@ -82,8 +82,15 @@ const groups = [
       ['E2E_SUPABASE_CONFIGURED', () => status('E2E_SUPABASE_CONFIGURED')],
       ['E2E_STUDENT_EMAIL', () => status('E2E_STUDENT_EMAIL')],
       ['E2E_STUDENT_PASSWORD', () => status('E2E_STUDENT_PASSWORD')],
+      ['E2E_TEACHER_EMAIL', () => status('E2E_TEACHER_EMAIL')],
+      ['E2E_TEACHER_PASSWORD', () => status('E2E_TEACHER_PASSWORD')],
       ['E2E_EXAM_ID', () => status('E2E_EXAM_ID')],
+      ['E2E_COURSE_ID', () => status('E2E_COURSE_ID')],
       ['E2E_BASE_URL', () => process.env.E2E_BASE_URL || '(default http://localhost:5177)'],
+      ['VITE_PUBLIC_SITE_URL', () => {
+        const v = process.env.VITE_PUBLIC_SITE_URL;
+        return v ? `PRESENT  ${origin(v)}` : 'absent (uses current browser origin)';
+      }],
     ],
   },
 ];

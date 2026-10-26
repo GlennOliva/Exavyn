@@ -56,6 +56,7 @@ export interface PageState {
   setPageSize: (size: PageSize) => void;
   setQuery: (value: string) => void;
   setFilter: (key: string, value: string) => void;
+  clearFilters: (filterKeys: string[]) => void;
   reset: () => void;
 }
 
@@ -131,6 +132,17 @@ export function usePageState(prefix = ''): PageState {
     [commit, key, resetPage],
   );
 
+  const clearFilters = useCallback(
+    (filterKeys: string[]) => {
+      commit((next) => {
+        next.delete(key('q'));
+        resetPage(next);
+        for (const filterKey of filterKeys) next.delete(key(filterKey));
+      }, true);
+    },
+    [commit, key, resetPage],
+  );
+
   const reset = useCallback(() => {
     setParams(new URLSearchParams(), { replace: false });
   }, [setParams]);
@@ -146,6 +158,7 @@ export function usePageState(prefix = ''): PageState {
     setPageSize,
     setQuery,
     setFilter,
+    clearFilters,
     reset,
   };
 }
