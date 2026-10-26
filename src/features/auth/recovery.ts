@@ -1,0 +1,80 @@
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Validate a browser-safe site URL. Only http(s) origins are accepted, and
+ * plain HTTP is limited to local development so a production build cannot be
+ * redirected to an insecure remote origin by configuration.
+ */
+export function normalizePublicSiteUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    if (url.protocol === 'http:' && !LOCAL_HOSTS.has(url.hostname)) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the URL Supabase should return to after a recovery link.
+ *
+ * Production deploys set VITE_PUBLIC_SITE_URL to the stable Vercel origin.
+ * Local development leaves it unset and therefore uses the dev server origin.
+ * The configured value is validated (HTTPS; HTTP only for localhost), and an
+ * invalid value falls back to the current origin rather than localhost.
+ */
+export function passwordResetRedirectUrl(currentOrigin: string): string {
+  const configured = normalizePublicSiteUrl(
+    import.meta.env.VITE_PUBLIC_SITE_URL as string | undefined,
+  );
+  const current = normalizePublicSiteUrl(currentOrigin);
+  const base = configured ?? current ?? currentOrigin.replace(/\/+$/, '');
+  return `${base}/update-password`;
+}
+
+export interface RecoveryLinkFailure {
+  code: string;
+  message: string;
+}
+
+const EXPIRED_MESSAGE =
+  'This password reset link has expired or has already been used. Request a new reset email to continue.';
+const INVALID_MESSAGE =
+  'This password reset link is invalid. Request a new reset email to continue.';
+
+/**
+ * Read only the non-secret error fields Supabase appends to recovery redirects.
+ * Never return or log the full hash: a valid recovery hash contains tokens.
+ */
+export function parseRecoveryLinkFailure(
+  hash: string,
+  search = '',
+): RecoveryLinkFailure | null {
+  const hashParams = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+  const queryParams = new URLSearchParams(search);
+  const error = hashParams.get('error') ?? queryParams.get('error') ?? '';
+  const errorCode = hashParams.get('error_code') ?? queryParams.get('error_code') ?? '';
+  const code = errorCode || error;
+
+  if (!error && !errorCode) return null;
+  if (
+    code === 'otp_expired' ||
+    code === 'access_denied' ||
+    code === 'session_not_found' ||
+    code === 'refresh_token_not_found'
+  ) {
+    return { code, message: EXPIRED_MESSAGE };
+  }
+  return { code: code || 'invalid_link', message: INVALID_MESSAGE };
+}
+
+/** Remove recovery error parameters without retaining tokens in browser history. */
+export function clearRecoveryLocation(): void {
+  if (typeof window === 'undefined') return;
+  if (window.location.hash || window.location.search) {
+    window.history.replaceState(null, '', window.location.pathname);
+  }
+}

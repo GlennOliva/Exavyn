@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import { toAppError } from '../../lib/errors';
 import type { AppRole, ProfileRow } from '../../lib/database.types';
+import { passwordResetRedirectUrl } from './recovery';
 
 export interface SessionUser {
   id: string;
@@ -40,7 +41,7 @@ export async function signOut(): Promise<void> {
 
 export async function sendPasswordReset(email: string): Promise<void> {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/update-password`,
+    redirectTo: passwordResetRedirectUrl(window.location.origin),
   });
   if (error) throw toAppError(error);
 }

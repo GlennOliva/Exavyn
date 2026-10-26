@@ -186,6 +186,25 @@ export async function listTeacherCoursesPage(params: {
   return { rows: data ?? [], total: count ?? 0 };
 }
 
+interface EnrollmentSearchRow {
+  id: string;
+  course_id: string;
+  student_id: string;
+  status: EnrollmentRow['status'];
+  requested_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+  student_full_name: string;
+  student_email: string | null;
+  total?: number;
+}
+
+/**
+ * Server-side enrollment search. PostgREST cannot express an `or` across an
+ * embedded relationship alias (`student.full_name...`), so the search, status
+ * filter, ordering, pagination, and exact count all run in one parameterized
+ * RPC over the teacher's authorized course.
+ */
 export async function listCourseEnrollmentsPage(
   courseId: string,
   params: {
@@ -195,26 +214,35 @@ export async function listCourseEnrollmentsPage(
     status?: 'all' | EnrollmentRow['status'];
   },
 ): Promise<PageResult<EnrollmentWithStudent>> {
-  const { from, to } = pageRange(params.page, params.pageSize);
-  const needle = escapePostgrestSearch(params.q);
-  let query = supabase
-    .from('enrollments')
-    .select('*, student:profiles!enrollments_student_id_fkey(id, full_name, email)', {
-      count: 'exact',
-    })
-    .eq('course_id', courseId);
-  if (params.status && params.status !== 'all') query = query.eq('status', params.status);
-  if (needle) {
-    query = query.or(
-      `student.full_name.ilike.%${needle}%,student.email.ilike.%${needle}%`,
-    );
-  }
-  const { data, count, error } = await query
-    .order('requested_at', { ascending: false })
-    .order('id', { ascending: false })
-    .range(from, to);
+  const { data, error } = await supabase.rpc('get_course_enrollments_page', {
+    p_course_id: courseId,
+    p_search: params.q,
+    p_status: params.status && params.status !== 'all' ? params.status : null,
+    p_page: params.page,
+    p_page_size: params.pageSize,
+  });
   if (error) throw toAppError(error);
-  return { rows: (data ?? []) as unknown as EnrollmentWithStudent[], total: count ?? 0 };
+
+  const payload = data as unknown as {
+    rows?: EnrollmentSearchRow[];
+    total?: number;
+  } | null;
+  const rows = (payload?.rows ?? []).map((row) => ({
+    id: row.id,
+    course_id: row.course_id,
+    student_id: row.student_id,
+    status: row.status,
+    requested_at: row.requested_at,
+    decided_at: row.decided_at,
+    decided_by: row.decided_by,
+    student: {
+      id: row.student_id,
+      full_name: row.student_full_name,
+      email: row.student_email,
+    },
+  }));
+
+  return { rows, total: Number(payload?.total ?? 0) };
 }
 
 export async function listStudentEnrollmentsPage(params: {

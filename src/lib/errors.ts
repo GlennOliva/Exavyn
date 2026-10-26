@@ -23,6 +23,8 @@ const EMAIL_SEND_RATE_LIMIT_MESSAGE =
   'your administrator to configure a custom email (SMTP) sender.';
 
 const REQUEST_RATE_LIMIT_MESSAGE = 'Too many requests. Please wait a moment and try again.';
+const EXPIRED_RECOVERY_MESSAGE =
+  'This password reset link has expired or has already been used. Request a new reset email to continue.';
 
 /**
  * Authored messages raised by our own PL/pgSQL RPCs. `P0002` (no_data_found)
@@ -55,6 +57,9 @@ const SAFE_MESSAGES: Record<string, string> = {
   email_address_not_authorized: 'That email address is not allowed to register.',
   signup_disabled: 'New sign-ups are currently disabled. Please contact your administrator.',
   weak_password: 'Please choose a stronger password (at least 8 characters).',
+  otp_expired: EXPIRED_RECOVERY_MESSAGE,
+  session_not_found: EXPIRED_RECOVERY_MESSAGE,
+  access_denied: EXPIRED_RECOVERY_MESSAGE,
 };
 
 export function toAppError(error: unknown): AppError {

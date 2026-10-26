@@ -19,7 +19,7 @@ export function ForgotPasswordPage() {
     setMessage(null);
     try {
       await requestPasswordReset(email);
-      setMessage('If that email is registered, a reset link has been sent.');
+      setMessage('If that email is registered, reset instructions will be sent shortly.');
     } catch (err) {
       setError(errorMessage(err));
     } finally {
