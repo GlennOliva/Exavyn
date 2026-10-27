@@ -1,3 +1,4 @@
+import { WORD_HINT_MAP } from '../wordHints';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button } from '../../../../components/ui';
 
@@ -26,7 +27,9 @@ const KEYBOARD = [
 ];
 
 function pickWord() {
-  return WORDS[Math.floor(Math.random() * WORDS.length)].toUpperCase();
+  const candidates = WORDS.filter((w) => WORD_HINT_MAP.has(w.toUpperCase()));
+  const pool = candidates.length > 0 ? candidates : WORDS;
+  return pool[Math.floor(Math.random() * pool.length)].toUpperCase();
 }
 
 interface WordState {
@@ -34,6 +37,7 @@ interface WordState {
   guesses: string[];
   current: string;
   status: 'playing' | 'won' | 'lost';
+  hintShown?: boolean;
 }
 
 function getState(): WordState | null {
@@ -56,15 +60,17 @@ function saveState(state: WordState) {
 }
 
 export default function WordGuess() {
-  const [solution, setSolution] = useState<string>(() => getState()?.solution || pickWord());
-  const [guesses, setGuesses] = useState<string[]>(() => getState()?.guesses || []);
-  const [current, setCurrent] = useState<string>(() => getState()?.current || '');
-  const [status, setStatus] = useState<'playing' | 'won' | 'lost'>(() => getState()?.status || 'playing');
+  const saved = getState();
+  const [solution, setSolution] = useState<string>(() => saved?.solution || pickWord());
+  const [guesses, setGuesses] = useState<string[]>(() => saved?.guesses || []);
+  const [current, setCurrent] = useState<string>(() => saved?.current || '');
+  const [status, setStatus] = useState<'playing' | 'won' | 'lost'>(() => saved?.status || 'playing');
   const [showRules, setShowRules] = useState(false);
+  const [hintShown, setHintShown] = useState<boolean>(() => saved?.hintShown || false);
 
   useEffect(() => {
-    saveState({ solution, guesses, current, status });
-  }, [solution, guesses, current, status]);
+    saveState({ solution, guesses, current, status, hintShown });
+  }, [solution, guesses, current, status, hintShown]);
 
   const maxGuesses = 6;
   const isOver = status !== 'playing';
@@ -146,7 +152,8 @@ export default function WordGuess() {
     setGuesses([]);
     setCurrent('');
     setStatus('playing');
-    saveState({ solution: w, guesses: [], current: '', status: 'playing' });
+    setHintShown(false);
+    saveState({ solution: w, guesses: [], current: '', status: 'playing', hintShown: false });
   };
 
   const rows = [...guesses, ...(status === 'playing' ? [current.padEnd(5, ' ')] : [])].slice(0, maxGuesses);
@@ -160,12 +167,18 @@ export default function WordGuess() {
         </div>
         <div className="row">
           <Button size="sm" onClick={() => setShowRules((r) => !r)}>{showRules ? 'Hide rules' : 'Show rules'}</Button>
+          <Button size="sm" onClick={() => setHintShown(true)} disabled={hintShown || isOver}>Hint</Button>
           <Button size="sm" onClick={newGame}>New puzzle</Button>
         </div>
       </div>
       {showRules ? (
         <Alert tone="info">
-          <strong>Rules:</strong> Guess a five-letter word in up to six tries. Green/correct position, yellow/present elsewhere, gray/absent. Duplicate letters are handled by position. Use the on-screen or physical keyboard.
+          <strong>Rules:</strong> Guess a five-letter word in up to six tries. Green/correct position, yellow/present elsewhere, gray/absent. Duplicate letters are handled by position. Use the on-screen or physical keyboard. Hint does not consume a guess.
+        </Alert>
+      ) : null}
+      {hintShown ? (
+        <Alert tone="info">
+          <strong>Hint:</strong> {WORD_HINT_MAP.get(solution) || 'Hint unavailable for this puzzle.'}
         </Alert>
       ) : null}
       {status === 'won' ? <Alert tone="success">Correct! Well done.</Alert> : null}
