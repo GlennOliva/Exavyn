@@ -17,6 +17,7 @@ import { formatDateTime } from '../lib/format';
 import { errorMessage } from '../lib/errors';
 import type { FeedbackRecipient, FeedbackStatus } from '../lib/database.types';
 import { useToasts } from '../components/toast/ToastProvider';
+import { AttachmentViewer } from '../components/AttachmentViewer';
 
 export function FeedbackPage() {
   const { user } = useAuth();
@@ -261,47 +262,67 @@ function StaffFeedbackCard({
 
 
 function FeedbackAttachments({ feedbackId }: { feedbackId: string }) {
-  const [attachments, setAttachments] = useState<Array<{id:string;original_name:string;size_bytes:number}>>([]);
+  const [attachments, setAttachments] = useState<Array<{id:string;original_name:string;size_bytes:number;mime_type?:string}>>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToasts();
+  const [viewer, setViewer] = useState<{id:string;name:string} | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    import('../features/attachments/api')
-      .then((m) => m.listFeedbackAttachments(feedbackId))
-      .then((rows) => {
-        if (active) setAttachments(rows);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [feedbackId]);
-
-  const viewAttachment = async (att: {id:string;original_name:string;size_bytes:number}) => {
+  const load = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const m = await import('../features/attachments/api');
-      const url = await m.getFeedbackAttachmentUrl({ attachmentId: att.id, feedbackId });
-      window.open(url, '_blank', 'noopener,noreferrer');
+      const rows = await m.listFeedbackAttachments(feedbackId);
+      setAttachments(rows);
     } catch {
-      toast({ tone: 'error', message: 'Unable to open attachment.' });
+      setError('Unable to load attachments.');
+      toast({ tone: 'error', message: 'Unable to load attachments.' });
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (loading || attachments.length === 0) return null;
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedbackId]);
+
+  const viewAttachment = (att: {id:string;original_name:string}) => {
+    setViewer({ id: att.id, name: att.original_name });
+  };
+
+  if (loading) return null;
+  if (error) {
+    return (
+      <div className="mt-2">
+        <div className="small muted">Attachments</div>
+        <div className="row">
+          <span className="small muted">Failed to load</span>
+          <Button size="sm" variant="ghost" onClick={() => void load()}>Retry</Button>
+        </div>
+      </div>
+    );
+  }
+  if (attachments.length === 0) return null;
   return (
     <div className="mt-2">
       <div className="small muted">Attachments</div>
       <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
         {attachments.map((att) => (
-          <Button key={att.id} size="sm" variant="ghost" onClick={() => void viewAttachment(att)}>
+          <Button key={att.id} size="sm" variant="ghost" onClick={() => viewAttachment(att)}>
             {att.original_name} ({Math.round(att.size_bytes / 1024)} KB)
           </Button>
         ))}
       </div>
+      {viewer ? (
+        <AttachmentViewer
+          attachmentId={viewer.id}
+          feedbackId={feedbackId}
+          originalName={viewer.name}
+          onClose={() => setViewer(null)}
+        />
+      ) : null}
     </div>
   );
 }

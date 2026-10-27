@@ -1,18 +1,18 @@
-import { Alert, Button, Card } from '../../../../components/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Button, Card } from '../../../../components/ui';
 
 const COLS = 10;
 const ROWS = 20;
 const EMPTY = 0;
 
 const SHAPES = [
-  [[1,1,1,1]], // I
-  [[1,1],[1,1]], // O
-  [[0,1,0],[1,1,1]], // T
-  [[0,1,1],[1,1,0]], // S
-  [[1,1,0],[0,1,1]], // Z
-  [[1,0,0],[1,1,1]], // J
-  [[0,0,1],[1,1,1]], // L
+  [[1,1,1,1]],
+  [[1,1],[1,1]],
+  [[0,1,0],[1,1,1]],
+  [[0,1,1],[1,1,0]],
+  [[1,1,0],[0,1,1]],
+  [[1,0,0],[1,1,1]],
+  [[0,0,1],[1,1,1]],
 ];
 
 function randomShape() {
@@ -32,7 +32,20 @@ function rotate(matrix: number[][]) {
   return result;
 }
 
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduced(mq.matches);
+    const handler = () => setReduced(mq.matches);
+    mq.addEventListener?.('change', handler);
+    return () => mq.removeEventListener?.('change', handler);
+  }, []);
+  return reduced;
+}
+
 export default function FallingBlocks() {
+  const reduced = useReducedMotion();
   const [board, setBoard] = useState<number[][]>(() => Array(ROWS).fill(0).map(() => Array(COLS).fill(EMPTY)));
   const [piece, setPiece] = useState(() => randomShape());
   const [nextPiece, setNextPiece] = useState(() => randomShape());
@@ -44,6 +57,11 @@ export default function FallingBlocks() {
   const lastDrop = useRef<number>(Date.now());
   const raf = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const gameStateRef = useRef({ board, piece, nextPiece, score, lines, gameOver, paused });
+  
+  useEffect(() => {
+    gameStateRef.current = { board, piece, nextPiece, score, lines, gameOver, paused };
+  }, [board, piece, nextPiece, score, lines, gameOver, paused]);
 
   const isValid = useCallback((shape: number[][], x: number, y: number, testBoard?: number[][]) => {
     const tb = testBoard !== undefined ? testBoard : board;
@@ -60,7 +78,7 @@ export default function FallingBlocks() {
     return true;
   }, [board]);
 
-  const mergePiece = useCallback((currentPiece: any, currentBoard: number[][]) => {
+  const mergePiece = useCallback((currentPiece: {shape: number[][]; x: number; y: number}, currentBoard: number[][]) => {
     const newBoard = currentBoard.map(row => [...row]);
     for (let r = 0; r < currentPiece.shape.length; r++) {
       for (let c = 0; c < currentPiece.shape[r].length; c++) {
@@ -92,50 +110,55 @@ export default function FallingBlocks() {
   }, []);
 
   const lockPiece = useCallback(() => {
-    const merged = mergePiece(piece, board) as number[][];
+    const state = gameStateRef.current;
+    const merged = mergePiece(state.piece, state.board) as number[][];
     setBoard(merged);
-    const newP = nextPiece;
+    const newP = state.nextPiece;
     setNextPiece(randomShape());
     if (!isValid(newP.shape, newP.x, newP.y, merged)) {
       setGameOver(true);
       return;
     }
     setPiece(newP);
-  }, [piece, board, nextPiece, isValid, mergePiece]);
+  }, [isValid, mergePiece]);
 
   const move = useCallback((dir: -1 | 1) => {
-    if (gameOver || paused) return;
-    if (isValid(piece.shape, piece.x + dir, piece.y)) {
+    const state = gameStateRef.current;
+    if (state.gameOver || state.paused) return;
+    if (isValid(state.piece.shape, state.piece.x + dir, state.piece.y)) {
       setPiece(p => ({ ...p, x: p.x + dir }));
     }
-  }, [gameOver, paused, piece, isValid]);
+  }, [isValid]);
 
   const rotatePiece = useCallback(() => {
-    if (gameOver || paused) return;
-    const rotated = rotate(piece.shape);
-    if (isValid(rotated, piece.x, piece.y)) {
+    const state = gameStateRef.current;
+    if (state.gameOver || state.paused) return;
+    const rotated = rotate(state.piece.shape);
+    if (isValid(rotated, state.piece.x, state.piece.y)) {
       setPiece(p => ({ ...p, shape: rotated }));
     }
-  }, [gameOver, paused, piece, isValid]);
+  }, [isValid]);
 
   const drop = useCallback(() => {
-    if (gameOver || paused) return;
-    if (isValid(piece.shape, piece.x, piece.y + 1)) {
+    const state = gameStateRef.current;
+    if (state.gameOver || state.paused) return;
+    if (isValid(state.piece.shape, state.piece.x, state.piece.y + 1)) {
       setPiece(p => ({ ...p, y: p.y + 1 }));
     } else {
       lockPiece();
     }
-  }, [gameOver, paused, piece, isValid, lockPiece]);
+  }, [isValid, lockPiece]);
 
   const hardDrop = useCallback(() => {
-    if (gameOver || paused) return;
-    let y = piece.y;
-    while (isValid(piece.shape, piece.x, y + 1)) {
+    const state = gameStateRef.current;
+    if (state.gameOver || state.paused) return;
+    let y = state.piece.y;
+    while (isValid(state.piece.shape, state.piece.x, y + 1)) {
       y++;
     }
     setPiece(p => ({ ...p, y }));
     setTimeout(() => lockPiece(), 0);
-  }, [gameOver, paused, piece, isValid, lockPiece]);
+  }, [isValid, lockPiece]);
 
   const restart = useCallback(() => {
     setBoard(Array(ROWS).fill(0).map(() => Array(COLS).fill(EMPTY)));
@@ -145,12 +168,14 @@ export default function FallingBlocks() {
     setLines(0);
     setGameOver(false);
     setPaused(false);
+    lastDrop.current = Date.now();
   }, []);
 
   useEffect(() => {
     const loop = () => {
       const now = Date.now();
-      if (!gameOver && !paused && now - lastDrop.current > dropInterval.current) {
+      const state = gameStateRef.current;
+      if (!state.gameOver && !state.paused && now - lastDrop.current > dropInterval.current) {
         drop();
         lastDrop.current = now;
       }
@@ -160,17 +185,15 @@ export default function FallingBlocks() {
     return () => {
       if (raf.current !== null) cancelAnimationFrame(raf.current);
     };
-  }, [drop, gameOver, paused]);
+  }, [drop]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (document.hidden) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
-      if (containerRef.current && !containerRef.current.contains(e.target as Node) && e.target !== document.body) {
-        // Only handle if focused within game
-      }
-      if (!containerRef.current?.contains(document.activeElement) && document.activeElement !== containerRef.current) {
-        // Still allow if container focused
+      if (!containerRef.current?.contains(e.target as Node) && document.activeElement !== containerRef.current) {
+        // Only handle if within game area
+        if (!containerRef.current?.contains(document.activeElement)) return;
       }
       if (e.key === 'ArrowLeft') { e.preventDefault(); move(-1); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); move(1); }
@@ -193,7 +216,6 @@ export default function FallingBlocks() {
 
   const renderBoard = () => {
     const display = board.map(row => [...row]);
-    // Draw piece
     for (let r = 0; r < piece.shape.length; r++) {
       for (let c = 0; c < piece.shape[r].length; c++) {
         if (piece.shape[r][c]) {
@@ -207,9 +229,10 @@ export default function FallingBlocks() {
   };
 
   const display = renderBoard();
+  const cellSize = Math.min(22, Math.floor((typeof window !== 'undefined' ? window.innerWidth * 0.9 : 300) / COLS));
 
   return (
-    <div className="stack" ref={containerRef} tabIndex={0} role="application" aria-label="Falling Blocks game">
+    <div className="stack" ref={containerRef} tabIndex={0} role="application" aria-label="Falling Blocks game" style={{ width: '100%' }}>
       <div className="row-between">
         <div>
           <h2>Stack Blocks</h2>
@@ -223,23 +246,29 @@ export default function FallingBlocks() {
       </div>
       {gameOver ? <Alert tone="warning">Game Over</Alert> : null}
       {paused && !gameOver ? <Alert tone="info">Paused</Alert> : null}
-      <div className="row" style={{ gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${COLS}, 1fr)`, gap: 1, background: 'var(--border)', padding: 1, width: 220 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start', width: '100%' }}>
+        <div style={{ flex: '0 0 auto', display: 'grid', gridTemplateColumns: `repeat(${COLS}, ${cellSize}px)`, gap: 1, background: 'var(--border)', padding: 1, maxWidth: '100%', boxSizing: 'border-box' }}>
           {display.map((row, r) => 
             row.map((cell, c) => (
               <div
                 key={`${r}-${c}`}
                 style={{
-                  width: 21,
-                  height: 21,
+                  width: cellSize,
+                  height: cellSize,
                   background: cell === 2 ? 'var(--primary)' : cell === 1 ? 'var(--text)' : 'var(--surface)',
+                  transition: reduced ? 'none' : undefined,
                 }}
                 aria-hidden="true"
               />
             ))
           )}
         </div>
-        <div className="stack">
+        <div className="stack" style={{ flex: '1 1 200px', minWidth: 200 }}>
+          <Card>
+            <p className="small"><strong>Score</strong></p>
+            <p className="small muted">Score: {score}</p>
+            <p className="small muted">Lines: {lines}</p>
+          </Card>
           <Card>
             <p className="small"><strong>Controls</strong></p>
             <ul className="small muted">
@@ -252,12 +281,12 @@ export default function FallingBlocks() {
           </Card>
           <Card>
             <p className="small"><strong>Touch controls</strong></p>
-            <div className="row">
+            <div className="row" style={{ flexWrap: 'wrap' }}>
               <Button size="sm" onClick={() => move(-1)}>←</Button>
               <Button size="sm" onClick={() => rotatePiece}>↻</Button>
               <Button size="sm" onClick={() => move(1)}>→</Button>
             </div>
-            <div className="row">
+            <div className="row" style={{ flexWrap: 'wrap' }}>
               <Button size="sm" onClick={() => drop}>↓</Button>
               <Button size="sm" onClick={() => hardDrop}>Drop</Button>
             </div>
