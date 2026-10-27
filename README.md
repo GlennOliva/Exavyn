@@ -769,3 +769,8 @@ navigation guard (SOP req 119 / acceptance 13).
 disclaimer); full device lockdown and other monitoring channels are future
 work; result views add `after_close` release only after the DB job or visible
 window confirms it server-side.
+---
+## Stress Reliever (Student)
+- Added 'Stress Reliever' to the student sidebar with three recreational games: Bubble Pop, Word Puzzle, and Stack Blocks.
+- Games are hidden/blocked during active exams; keyboard handlers are scoped to games and cleaned up on navigation. Local storage for game progress is scoped by session and not shared with exam data.
+- Not a treatment for anxiety; no public leaderboard or tracking.

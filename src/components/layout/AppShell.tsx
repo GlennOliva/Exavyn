@@ -28,6 +28,7 @@ const NAV: Record<AppRole, Array<{ to: string; label: string }>> = {
     { to: '/student', label: 'Dashboard' },
     { to: '/student/join', label: 'Join course' },
     { to: '/student/history', label: 'History' },
+    { to: '/student/stress-reliever', label: 'Stress Reliever' },
     { to: '/profile', label: 'Profile & settings' },
     { to: '/feedback', label: 'Feedback' },
   ],

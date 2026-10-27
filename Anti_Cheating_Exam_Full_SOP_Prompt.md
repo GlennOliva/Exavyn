@@ -321,3 +321,8 @@ These references support the browser capability boundaries and database authoriz
 
 ## Exam details spacing
 - Add vertical gap (~24px desktop, ~16px mobile) between exam details table/card and student rules card using existing spacing tokens.
+
+## Stress Reliever module
+- Student sidebar includes 'Stress Reliever' linking to /student/stress-reliever. Three recreational games (Bubble Pop, Word Puzzle, Stack Blocks) are original implementations, not branded Wordle/Tetris. Scoring is separate from academics; no treatment claims, no public leaderboard/chat/ads/tracking. Local progress scoped to account/device storage only.
+- Games are blocked during active examination (route guard + server/attempt status checks + tab sync), and keyboard handlers are scoped to game; do not interfere with exam controls. After server-confirmed finalization, optional 'Take a break' link is shown on results/pending results.
+- Clean up timers, audio, and listeners on unmount/navigation/sign-out; support reduced motion, light/dark, mobile/iOS.

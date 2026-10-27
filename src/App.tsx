@@ -36,6 +36,7 @@ import { ExamPage } from './pages/student/ExamPage';
 import { ResultPage } from './pages/student/ResultPage';
 import { AttemptReviewPage } from './pages/student/AttemptReviewPage';
 import { HistoryPage } from './pages/student/HistoryPage';
+import { StressRelieverPage } from './pages/student/StressRelieverPage';
 
 function NotFound() {
   return (
@@ -119,6 +120,7 @@ const router = createBrowserRouter([
                   { path: '/student/attempts/:attemptId/result', element: <ResultPage /> },
                   { path: '/student/attempts/:attemptId/review', element: <AttemptReviewPage /> },
                   { path: '/student/history', element: <HistoryPage /> },
+                  { path: '/student/stress-reliever', element: <StressRelieverPage /> },
                 ],
               },
 
